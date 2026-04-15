@@ -150,11 +150,6 @@ export function parseNmea(content: string): ParsedNmea {
 
   // If we only have GGA data (no RMC), fall back to GGA-only points
   if (points.length === 0 && pendingGga.size > 0) {
-    for (const [, gga] of pendingGga) {
-      // We can't recover coordinates from pendingGga alone (only stored metadata)
-      // So do a second pass for GGA-only
-      void gga;
-    }
     // Second pass for GGA-only files
     for (const rawLine of lines) {
       const line = rawLine.trim();
