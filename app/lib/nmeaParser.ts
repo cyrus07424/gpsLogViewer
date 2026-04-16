@@ -64,17 +64,38 @@ function verifyChecksum(sentence: string): boolean {
   return calc === expected;
 }
 
+interface GgaEntry {
+  altitude: number;
+  fixQuality: number;
+  hdop: number;
+  satellites: number;
+}
+
+// Normalize a NMEA time field to HHMMSS (drop fractional seconds) for use as
+// a map key, so that GGA and RMC sentences from the same fix always match even
+// when their fractional-second precision differs.
+function normalizeTimeKey(timeStr: string): string {
+  if (!timeStr) return "";
+  // Time fields are HHMMSS[.sss] – keep only the first 6 characters.
+  return timeStr.substring(0, 6);
+}
+
 export function parseNmea(content: string): ParsedNmea {
-  const lines = content.split(/\r?\n/);
+  // Split on all common line-ending conventions: \r\n, \r (bare CR used by
+  // many GPS devices), and \n (Unix).
+  const lines = content.split(/\r\n|\r|\n/);
   const points: GpsPoint[] = [];
   const rawSentences: string[] = [];
   const errors: string[] = [];
 
-  // Temporary storage to correlate GGA altitude/quality with RMC speed
-  const pendingGga: Map<
-    string,
-    { altitude: number; fixQuality: number; hdop: number; satellites: number }
-  > = new Map();
+  // Temporary storage to correlate GGA altitude/quality with RMC speed.
+  // Keyed by normalised time (HHMMSS) so precision differences don't break matching.
+  const pendingGga: Map<string, GgaEntry> = new Map();
+
+  // Most-recently parsed valid GGA entry.  Used as a fallback when the time-key
+  // lookup fails (e.g. device outputs RMC before GGA in the same fix cycle, or
+  // the time key is absent).
+  let lastGga: GgaEntry | undefined;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -103,13 +124,15 @@ export function parseNmea(content: string): ParsedNmea {
             const satellites = parseInt(parts[7], 10);
             const hdop = parseFloat(parts[8]);
             const altitude = parseFloat(parts[9]);
-            const key = timeStr || `${lat},${lng}`;
-            pendingGga.set(key, {
+            const key = normalizeTimeKey(timeStr) || `${lat},${lng}`;
+            const entry: GgaEntry = {
               altitude: isNaN(altitude) ? 0 : altitude,
               fixQuality,
               hdop: isNaN(hdop) ? 99 : hdop,
               satellites: isNaN(satellites) ? 0 : satellites,
-            });
+            };
+            pendingGga.set(key, entry);
+            lastGga = entry;
           }
         }
       } else if (type === "$GPRMC" || type === "$GNRMC" || type === "$GLRMC") {
@@ -128,7 +151,10 @@ export function parseNmea(content: string): ParsedNmea {
         const timestamp = parseTime(timeStr, dateStr);
 
         const speedKmh = isNaN(speedKnots) ? undefined : speedKnots * 1.852;
-        const gga = pendingGga.get(timeStr || `${lat},${lng}`);
+        // Try exact (normalised) time key first; fall back to lastGga so that
+        // altitude/satellites are preserved even when GGA follows RMC in the
+        // fix cycle or when the time keys differ in fractional-second precision.
+        const gga = pendingGga.get(normalizeTimeKey(timeStr) || `${lat},${lng}`) ?? lastGga;
 
         const point: GpsPoint = {
           lat,
