@@ -81,6 +81,7 @@ export default function NmeaViewer() {
   const [seekIndex, setSeekIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(10);
+  const [centerOnMarker, setCenterOnMarker] = useState(false);
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -280,6 +281,7 @@ export default function NmeaViewer() {
         seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
         seekIndex={seekIndex}
         markerType={markerType}
+        centerOnMarker={centerOnMarker}
       />
 
       {/* Top-right controls */}
@@ -503,6 +505,21 @@ export default function NmeaViewer() {
             aria-label={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
           >
             {markerType === "circle" ? "⬤" : "▲"}
+          </button>
+
+          {/* Center-on-marker toggle */}
+          <button
+            onClick={() => setCenterOnMarker((v) => !v)}
+            className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded shadow-sm text-base transition-colors ${
+              centerOnMarker
+                ? "bg-blue-600 hover:bg-blue-700 text-white border border-blue-600"
+                : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
+            }`}
+            title={centerOnMarker ? "マーカー中央固定: ON（クリックでOFF）" : "マーカー中央固定: OFF（クリックでON）"}
+            aria-label={centerOnMarker ? "マーカー中央固定をオフにする" : "マーカー中央固定をオンにする"}
+            aria-pressed={centerOnMarker}
+          >
+            ⊕
           </button>
 
           {/* Seekbar slider */}

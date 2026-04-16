@@ -35,6 +35,7 @@ interface MapViewProps {
   seekPoint?: GpsPoint | null;
   seekIndex?: number;
   markerType?: MarkerType;
+  centerOnMarker?: boolean;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -72,7 +73,7 @@ function buildArrowIcon(bearingDeg: number): L.DivIcon {
   });
 }
 
-export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle" }: MapViewProps) {
+export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
@@ -227,6 +228,11 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const latlng: [number, number] = [seekPoint.lat, seekPoint.lng];
     const content = buildTooltipContent(seekPoint);
 
+    // Center the map on the marker if requested
+    if (centerOnMarker) {
+      map.panTo(latlng, { animate: false });
+    }
+
     // Determine bearing for arrow marker
     const resolveBearing = (): number => {
       if (seekPoint.course !== undefined) return seekPoint.course;
@@ -284,7 +290,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
           .addTo(map);
       }
     }
-  }, [seekPoint, seekIndex, markerType, points]);
+  }, [seekPoint, seekIndex, markerType, points, centerOnMarker]);
 
   return (
     <div
