@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useMemo, useEffect } from "react";
+import React, { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats, type SatelliteInfo, type Constellation } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
@@ -57,6 +57,12 @@ function detectFormat(fileName: string, content: string): FileFormat {
   return "unknown";
 }
 
+const verticalSliderStyle: React.CSSProperties = {
+  writingMode: "vertical-lr",
+  direction: "rtl",
+  height: "80px",
+};
+
 export default function NmeaViewer() {
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [stats, setStats] = useState<TrackStats | null>(null);
@@ -75,6 +81,7 @@ export default function NmeaViewer() {
   const [seekIndex, setSeekIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(10);
+  const [centerOnMarker, setCenterOnMarker] = useState(false);
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -274,6 +281,7 @@ export default function NmeaViewer() {
         seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
         seekIndex={seekIndex}
         markerType={markerType}
+        centerOnMarker={centerOnMarker}
       />
 
       {/* Top-right controls */}
@@ -443,17 +451,51 @@ export default function NmeaViewer() {
             {isPlaying ? "⏸" : "▶"}
           </button>
 
-          {/* Speed selector */}
-          <select
-            value={playSpeed}
-            onChange={(e) => setPlaySpeed(Number(e.target.value))}
-            className="flex-shrink-0 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 dark:text-gray-200"
-            title="再生速度"
-          >
-            {[1, 2, 5, 10, 30, 60].map((s) => (
-              <option key={s} value={s}>{s}x</option>
-            ))}
-          </select>
+          {/* Speed control — preset select + vertical slider popup on hover */}
+          <div className="group/speed flex-shrink-0 relative">
+            {/* Vertical slider popup */}
+            <div
+              className="absolute bottom-full left-1/2 -translate-x-1/2
+                flex flex-col items-center
+                bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm
+                border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg
+                px-2 pt-2 pb-2 gap-1 z-10
+                pointer-events-none opacity-0
+                group-hover/speed:pointer-events-auto group-hover/speed:opacity-100
+                transition-opacity duration-150"
+            >
+              <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 min-w-[28px] text-center">
+                {playSpeed}x
+              </span>
+              <input
+                type="range"
+                min={1}
+                max={100}
+                step={1}
+                value={Math.min(playSpeed, 100)}
+                onChange={(e) => setPlaySpeed(Number(e.target.value))}
+                style={verticalSliderStyle}
+                className="w-4 accent-blue-600 cursor-pointer"
+                aria-label="再生速度スライダー"
+              />
+              <span className="text-[10px] text-gray-400">1x</span>
+            </div>
+
+            {/* Preset select — always visible */}
+            <select
+              value={playSpeed}
+              onChange={(e) => setPlaySpeed(Number(e.target.value))}
+              className="text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 dark:text-gray-200"
+              title="再生速度プリセット（ホバーで無段階調整）"
+            >
+              {![1, 2, 5, 10, 30, 60].includes(playSpeed) && (
+                <option value={playSpeed}>{playSpeed}x</option>
+              )}
+              {[1, 2, 5, 10, 30, 60].map((s) => (
+                <option key={s} value={s}>{s}x</option>
+              ))}
+            </select>
+          </div>
 
           {/* Marker type toggle */}
           <button
@@ -463,6 +505,21 @@ export default function NmeaViewer() {
             aria-label={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
           >
             {markerType === "circle" ? "⬤" : "▲"}
+          </button>
+
+          {/* Center-on-marker toggle */}
+          <button
+            onClick={() => setCenterOnMarker((v) => !v)}
+            className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded shadow-sm text-base transition-colors ${
+              centerOnMarker
+                ? "bg-blue-600 hover:bg-blue-700 text-white border border-blue-600"
+                : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
+            }`}
+            title={centerOnMarker ? "マーカー中央固定: ON（クリックでOFF）" : "マーカー中央固定: OFF（クリックでON）"}
+            aria-label={centerOnMarker ? "マーカー中央固定をオフにする" : "マーカー中央固定をオンにする"}
+            aria-pressed={centerOnMarker}
+          >
+            ⊕
           </button>
 
           {/* Seekbar slider */}
