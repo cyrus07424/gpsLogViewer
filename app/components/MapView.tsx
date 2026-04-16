@@ -75,6 +75,19 @@ function buildArrowIcon(bearingDeg: number): L.DivIcon {
   });
 }
 
+/** Resolve the travel bearing (0–360) for a given point in a track. */
+function resolvePointBearing(point: GpsPoint, index: number | undefined, points: GpsPoint[]): number {
+  if (point.course !== undefined) return point.course;
+  if (index !== undefined && index > 0) {
+    const prev = points[index - 1];
+    if (prev) return calcBearing(prev.lat, prev.lng, point.lat, point.lng);
+  }
+  if ((index === undefined || index === 0) && points.length > 1) {
+    return calcBearing(point.lat, point.lng, points[1].lat, points[1].lng);
+  }
+  return 0;
+}
+
 export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -238,21 +251,9 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     }
 
     // Determine bearing for arrow marker
-    const resolveBearing = (): number => {
-      if (seekPoint.course !== undefined) return seekPoint.course;
-      if (seekIndex !== undefined && seekIndex > 0) {
-        const prev = points[seekIndex - 1];
-        if (prev) return calcBearing(prev.lat, prev.lng, seekPoint.lat, seekPoint.lng);
-      }
-      if (seekIndex !== undefined && seekIndex === 0 && points.length > 1) {
-        const next = points[1];
-        if (next) return calcBearing(seekPoint.lat, seekPoint.lng, next.lat, next.lng);
-      }
-      return 0;
-    };
+    const bearing = resolvePointBearing(seekPoint, seekIndex, points);
 
     if (markerType === "arrow") {
-      const bearing = resolveBearing();
       if (seekMarkerRef.current instanceof L.Marker) {
         seekMarkerRef.current.setLatLng(latlng);
         seekMarkerRef.current.setIcon(buildArrowIcon(bearing));
@@ -307,18 +308,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       return;
     }
 
-    // Resolve current bearing
-    let bearing = 0;
-    if (seekPoint.course !== undefined) {
-      bearing = seekPoint.course;
-    } else if (seekIndex !== undefined && seekIndex > 0) {
-      const prev = points[seekIndex - 1];
-      if (prev) bearing = calcBearing(prev.lat, prev.lng, seekPoint.lat, seekPoint.lng);
-    } else if (seekIndex !== undefined && seekIndex === 0 && points.length > 1) {
-      bearing = calcBearing(seekPoint.lat, seekPoint.lng, points[1].lat, points[1].lng);
-    }
-
-    map.setBearing(bearing);
+    map.setBearing(resolvePointBearing(seekPoint, seekIndex, points));
   }, [headingUp, seekPoint, seekIndex, points]);
 
   return (
