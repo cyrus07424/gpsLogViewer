@@ -11,7 +11,7 @@ export function exportToKml(points: GpsPoint[], filename: string): void {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 export function buildKml(points: GpsPoint[], trackName: string = "Track"): string {
