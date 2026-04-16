@@ -64,6 +64,13 @@ function verifyChecksum(sentence: string): boolean {
   return calc === expected;
 }
 
+interface GgaEntry {
+  altitude: number;
+  fixQuality: number;
+  hdop: number;
+  satellites: number;
+}
+
 // Normalize a NMEA time field to HHMMSS (drop fractional seconds) for use as
 // a map key, so that GGA and RMC sentences from the same fix always match even
 // when their fractional-second precision differs.
@@ -83,15 +90,12 @@ export function parseNmea(content: string): ParsedNmea {
 
   // Temporary storage to correlate GGA altitude/quality with RMC speed.
   // Keyed by normalised time (HHMMSS) so precision differences don't break matching.
-  const pendingGga: Map<
-    string,
-    { altitude: number; fixQuality: number; hdop: number; satellites: number }
-  > = new Map();
+  const pendingGga: Map<string, GgaEntry> = new Map();
 
   // Most-recently parsed valid GGA entry.  Used as a fallback when the time-key
   // lookup fails (e.g. device outputs RMC before GGA in the same fix cycle, or
   // the time key is absent).
-  let lastGga: { altitude: number; fixQuality: number; hdop: number; satellites: number } | undefined;
+  let lastGga: GgaEntry | undefined;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -121,7 +125,7 @@ export function parseNmea(content: string): ParsedNmea {
             const hdop = parseFloat(parts[8]);
             const altitude = parseFloat(parts[9]);
             const key = normalizeTimeKey(timeStr) || `${lat},${lng}`;
-            const entry = {
+            const entry: GgaEntry = {
               altitude: isNaN(altitude) ? 0 : altitude,
               fixQuality,
               hdop: isNaN(hdop) ? 99 : hdop,
