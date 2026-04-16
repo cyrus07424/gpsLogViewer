@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NMEA Viewer — GPS履歴マップ表示・分析ツール",
+  title: "GPS Log Viewer — GPS履歴マップ表示・分析ツール",
   description: "NMEAファイルをアップロードしてGPS履歴を地図上に表示・分析するツール",
 };
 

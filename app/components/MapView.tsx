@@ -39,8 +39,9 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
     const map = L.map(containerRef.current, {
       center: [35.6812, 139.7671], // Tokyo as default
       zoom: 13,
-      zoomControl: true,
+      zoomControl: false,
     });
+    L.control.zoom({ position: "bottomright" }).addTo(map);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:

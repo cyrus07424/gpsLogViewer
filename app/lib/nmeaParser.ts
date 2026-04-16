@@ -217,6 +217,31 @@ function haversine(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/**
+ * For any point that lacks a speed value, compute it from the haversine distance
+ * and time difference with the previous point.  Points that already have a speed
+ * are left unchanged.  Requires at least two consecutive points with timestamps.
+ */
+export function fillMissingSpeed(points: GpsPoint[]): GpsPoint[] {
+  if (points.length < 2) return points;
+
+  return points.map((p, i) => {
+    if (p.speed !== undefined) return p; // already has speed – keep it
+    if (i === 0) return p; // no previous point to diff against
+
+    const prev = points[i - 1];
+    if (!prev.timestamp || !p.timestamp) return p; // no time info
+
+    const dtSeconds = (p.timestamp.getTime() - prev.timestamp.getTime()) / 1000;
+    if (dtSeconds <= 0) return p; // avoid division by zero or negative intervals
+
+    const distKm = haversine(prev.lat, prev.lng, p.lat, p.lng);
+    const speedKmh = (distKm / dtSeconds) * 3600;
+
+    return { ...p, speed: speedKmh };
+  });
+}
+
 export function computeStats(points: GpsPoint[]): TrackStats {
   if (points.length === 0) {
     return {

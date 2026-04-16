@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { parseNmea, computeStats, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
+import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
 import { parseKml } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
@@ -97,8 +97,9 @@ export default function NmeaViewer() {
         raw = result.rawSentences;
       }
 
-      setPoints(pts);
-      setStats(computeStats(pts));
+      const filledPts = fillMissingSpeed(pts);
+      setPoints(filledPts);
+      setStats(computeStats(filledPts));
       setErrors(errs);
       setRawSentences(raw);
       setIsLoading(false);
