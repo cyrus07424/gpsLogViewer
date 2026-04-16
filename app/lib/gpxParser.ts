@@ -36,7 +36,6 @@ export function parseGpx(content: string): ParsedGpx {
 
       const eleEl = el.querySelector("ele");
       const timeEl = el.querySelector("time");
-      const nameEl = el.querySelector("name");
       const hdopEl = el.querySelector("hdop");
       const satEl = el.querySelector("sat");
       const speedEl = el.querySelector("speed");
@@ -50,8 +49,6 @@ export function parseGpx(content: string): ParsedGpx {
       const speedMs = speedEl ? parseFloat(speedEl.textContent ?? "") : undefined;
       const speed = speedMs !== undefined && !isNaN(speedMs) ? speedMs * 3.6 : undefined;
       const course = courseEl ? parseFloat(courseEl.textContent ?? "") : undefined;
-
-      void nameEl; // unused but parsed for future use
 
       points.push({
         lat,

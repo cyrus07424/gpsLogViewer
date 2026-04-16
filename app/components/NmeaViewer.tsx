@@ -46,10 +46,10 @@ function detectFormat(fileName: string, content: string): FileFormat {
   if (lower.endsWith(".gpx")) return "gpx";
   if (lower.endsWith(".kml") || lower.endsWith(".kmz")) return "kml";
   if (lower.endsWith(".nmea") || lower.endsWith(".nma") || lower.endsWith(".log") || lower.endsWith(".txt")) return "nmea";
-  // Content-based detection
+  // Content-based detection: check for specific root elements
   const trimmed = content.trimStart();
-  if (trimmed.startsWith("<?xml") || trimmed.startsWith("<gpx")) return "gpx";
-  if (trimmed.startsWith("<?xml") || trimmed.includes("<kml")) return "kml";
+  if (trimmed.includes("<gpx")) return "gpx";
+  if (trimmed.includes("<kml")) return "kml";
   if (trimmed.startsWith("$")) return "nmea";
   return "unknown";
 }
