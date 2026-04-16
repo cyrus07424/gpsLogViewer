@@ -59,6 +59,10 @@ export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProp
     });
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
+    // Custom pane for the seek marker so it always renders above track polylines
+    map.createPane("seekMarkerPane");
+    (map.getPane("seekMarkerPane") as HTMLElement).style.zIndex = "650";
+
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -204,8 +208,9 @@ export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProp
         color: "#fff",
         weight: 2.5,
         interactive: false,
+        pane: "seekMarkerPane",
       })
-        .bindTooltip(content, { permanent: false, direction: "top", offset: [0, -12] })
+        .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -12] })
         .addTo(map);
     }
   }, [seekPoint]);
