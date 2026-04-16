@@ -93,6 +93,18 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
       }).addTo(layer);
     }
 
+    const buildTooltipContent = (p: GpsPoint, label?: string): string =>
+      [
+        label ? `<b>${label}</b>` : "",
+        p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
+        p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
+        p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
+        p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
+        p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
+      ]
+        .filter(Boolean)
+        .join("<br>");
+
     // Start marker (green)
     const startPoint = points[0];
     const startIcon = L.divIcon({
@@ -102,12 +114,7 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
       iconAnchor: [7, 7],
     });
     L.marker([startPoint.lat, startPoint.lng], { icon: startIcon })
-      .bindPopup(
-        `<b>スタート</b><br>${startPoint.timestamp?.toLocaleString() ?? ""}` +
-          (startPoint.altitude !== undefined
-            ? `<br>高度: ${startPoint.altitude.toFixed(1)} m`
-            : "")
-      )
+      .bindTooltip(buildTooltipContent(startPoint, "スタート"), { sticky: true })
       .addTo(layer);
 
     // End marker (red)
@@ -119,15 +126,10 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
       iconAnchor: [7, 7],
     });
     L.marker([endPoint.lat, endPoint.lng], { icon: endIcon })
-      .bindPopup(
-        `<b>ゴール</b><br>${endPoint.timestamp?.toLocaleString() ?? ""}` +
-          (endPoint.altitude !== undefined
-            ? `<br>高度: ${endPoint.altitude.toFixed(1)} m`
-            : "")
-      )
+      .bindTooltip(buildTooltipContent(endPoint, "ゴール"), { sticky: true })
       .addTo(layer);
 
-    // Add clickable waypoint markers every Nth point
+    // Add hoverable waypoint markers every Nth point
     const step = Math.max(1, Math.floor(points.length / 50));
     for (let i = 0; i < points.length; i += step) {
       const p = points[i];
@@ -138,16 +140,8 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
         weight: 1,
         fillOpacity: 0.9,
       });
-      const popup = [
-        p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
-        p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
-        p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
-        p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
-        p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
-      ]
-        .filter(Boolean)
-        .join("<br>");
-      if (popup) dotIcon.bindPopup(popup);
+      const tooltip = buildTooltipContent(p);
+      if (tooltip) dotIcon.bindTooltip(tooltip, { sticky: true });
       dotIcon.addTo(layer);
     }
 
