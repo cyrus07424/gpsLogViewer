@@ -27,10 +27,14 @@ function buildTooltipContent(p: GpsPoint, label?: string): string {
     .join("<br>");
 }
 
+export type MarkerType = "circle" | "arrow";
+
 interface MapViewProps {
   points: GpsPoint[];
   colorBySpeed: boolean;
   seekPoint?: GpsPoint | null;
+  seekIndex?: number;
+  markerType?: MarkerType;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -42,11 +46,37 @@ function speedColor(speed?: number, maxSpeed?: number): string {
   return `rgb(${r},${g},0)`;
 }
 
-export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProps) {
+/** Calculate bearing in degrees (0–360) from point a to point b. */
+function calcBearing(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(bLng - aLng);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Build a Leaflet divIcon with an arrow SVG rotated to bearingDeg (0 = north). */
+function buildArrowIcon(bearingDeg: number): L.DivIcon {
+  const safeDeg = Number.isFinite(bearingDeg) ? bearingDeg % 360 : 0;
+  return L.divIcon({
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"
+      style="transform:rotate(${safeDeg}deg);display:block;">
+      <polygon points="14,2 22,24 14,19 6,24"
+        fill="#f97316" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+    </svg>`,
+    className: "",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
+export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle" }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
-  const seekMarkerRef = useRef<L.CircleMarker | null>(null);
+  const seekMarkerRef = useRef<L.CircleMarker | L.Marker | null>(null);
 
   // Initialize map once
   useEffect(() => {
@@ -197,23 +227,64 @@ export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProp
     const latlng: [number, number] = [seekPoint.lat, seekPoint.lng];
     const content = buildTooltipContent(seekPoint);
 
-    if (seekMarkerRef.current) {
-      seekMarkerRef.current.setLatLng(latlng);
-      seekMarkerRef.current.setTooltipContent(content);
+    // Determine bearing for arrow marker
+    const resolveBearing = (): number => {
+      if (seekPoint.course !== undefined) return seekPoint.course;
+      if (seekIndex !== undefined && seekIndex > 0) {
+        const prev = points[seekIndex - 1];
+        if (prev) return calcBearing(prev.lat, prev.lng, seekPoint.lat, seekPoint.lng);
+      }
+      if (seekIndex !== undefined && seekIndex === 0 && points.length > 1) {
+        const next = points[1];
+        if (next) return calcBearing(seekPoint.lat, seekPoint.lng, next.lat, next.lng);
+      }
+      return 0;
+    };
+
+    if (markerType === "arrow") {
+      const bearing = resolveBearing();
+      if (seekMarkerRef.current instanceof L.Marker) {
+        seekMarkerRef.current.setLatLng(latlng);
+        seekMarkerRef.current.setIcon(buildArrowIcon(bearing));
+        seekMarkerRef.current.setTooltipContent(content);
+      } else {
+        // Remove old circle marker if switching from circle to arrow
+        if (seekMarkerRef.current) {
+          seekMarkerRef.current.remove();
+          seekMarkerRef.current = null;
+        }
+        seekMarkerRef.current = L.marker(latlng, {
+          icon: buildArrowIcon(bearing),
+          interactive: false,
+          pane: "seekMarkerPane",
+        })
+          .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -16] })
+          .addTo(map);
+      }
     } else {
-      seekMarkerRef.current = L.circleMarker(latlng, {
-        radius: 9,
-        fillColor: "#f97316",
-        fillOpacity: 0.95,
-        color: "#fff",
-        weight: 2.5,
-        interactive: false,
-        pane: "seekMarkerPane",
-      })
-        .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -12] })
-        .addTo(map);
+      if (seekMarkerRef.current instanceof L.CircleMarker) {
+        seekMarkerRef.current.setLatLng(latlng);
+        seekMarkerRef.current.setTooltipContent(content);
+      } else {
+        // Remove old arrow marker if switching from arrow to circle
+        if (seekMarkerRef.current) {
+          seekMarkerRef.current.remove();
+          seekMarkerRef.current = null;
+        }
+        seekMarkerRef.current = L.circleMarker(latlng, {
+          radius: 9,
+          fillColor: "#f97316",
+          fillOpacity: 0.95,
+          color: "#fff",
+          weight: 2.5,
+          interactive: false,
+          pane: "seekMarkerPane",
+        })
+          .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -12] })
+          .addTo(map);
+      }
     }
-  }, [seekPoint]);
+  }, [seekPoint, seekIndex, markerType, points]);
 
   return (
     <div

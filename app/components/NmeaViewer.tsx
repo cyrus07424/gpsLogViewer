@@ -7,6 +7,7 @@ import { parseGpx } from "../lib/gpxParser";
 import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
 import { exportToKml } from "../lib/kmlExporter";
+import { type MarkerType } from "./MapView";
 
 type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
 
@@ -69,6 +70,7 @@ export default function NmeaViewer() {
   const [rawSentences, setRawSentences] = useState<string[]>([]);
   const [lastSatellites, setLastSatellites] = useState<SatelliteInfo[]>([]);
   const [colorBySpeed, setColorBySpeed] = useState(false);
+  const [markerType, setMarkerType] = useState<MarkerType>("circle");
   const [satelliteHistory, setSatelliteHistory] = useState<SatelliteInfo[][]>([]);
   const [seekIndex, setSeekIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -270,6 +272,8 @@ export default function NmeaViewer() {
         points={points}
         colorBySpeed={colorBySpeed}
         seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
+        seekIndex={seekIndex}
+        markerType={markerType}
       />
 
       {/* Top-right controls */}
@@ -450,6 +454,16 @@ export default function NmeaViewer() {
               <option key={s} value={s}>{s}x</option>
             ))}
           </select>
+
+          {/* Marker type toggle */}
+          <button
+            onClick={() => setMarkerType((v) => v === "circle" ? "arrow" : "circle")}
+            className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-sm text-base hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
+            aria-label={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
+          >
+            {markerType === "circle" ? "⬤" : "▲"}
+          </button>
 
           {/* Seekbar slider */}
           <input
