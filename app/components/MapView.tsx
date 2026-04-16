@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-rotate";
 import { type GpsPoint } from "../lib/nmeaParser";
 
 // Fix Leaflet default icon path issue in Next.js
@@ -36,6 +37,7 @@ interface MapViewProps {
   seekIndex?: number;
   markerType?: MarkerType;
   centerOnMarker?: boolean;
+  headingUp?: boolean;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -73,7 +75,7 @@ function buildArrowIcon(bearingDeg: number): L.DivIcon {
   });
 }
 
-export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false }: MapViewProps) {
+export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
@@ -87,6 +89,8 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       center: [35.6812, 139.7671], // Tokyo as default
       zoom: 13,
       zoomControl: false,
+      rotate: true,
+      bearing: 0,
     });
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
@@ -291,6 +295,31 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       }
     }
   }, [seekPoint, seekIndex, markerType, points, centerOnMarker]);
+
+  // Update map bearing for heading-up / north-up mode
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!headingUp || !seekPoint) {
+      // North-up: reset bearing to 0
+      map.setBearing(0);
+      return;
+    }
+
+    // Resolve current bearing
+    let bearing = 0;
+    if (seekPoint.course !== undefined) {
+      bearing = seekPoint.course;
+    } else if (seekIndex !== undefined && seekIndex > 0) {
+      const prev = points[seekIndex - 1];
+      if (prev) bearing = calcBearing(prev.lat, prev.lng, seekPoint.lat, seekPoint.lng);
+    } else if (seekIndex !== undefined && seekIndex === 0 && points.length > 1) {
+      bearing = calcBearing(seekPoint.lat, seekPoint.lng, points[1].lat, points[1].lng);
+    }
+
+    map.setBearing(bearing);
+  }, [headingUp, seekPoint, seekIndex, points]);
 
   return (
     <div
