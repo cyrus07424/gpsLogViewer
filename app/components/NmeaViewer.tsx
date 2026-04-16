@@ -402,7 +402,7 @@ export default function NmeaViewer() {
                   <StatsPanel stats={stats} points={points} colorBySpeed={colorBySpeed} setColorBySpeed={setColorBySpeed} />
                 )}
                 {activeTab === "chart" && (
-                  <ChartPanel points={points} />
+                  <ChartPanel points={points} seekIndex={seekIndex} />
                 )}
                 {activeTab === "satellite" && (
                   <SatellitePanel
@@ -570,7 +570,7 @@ function StatsPanel({
 
 type ChartId = "speed" | "alt" | "satellites" | "scatter" | "enu";
 
-function ChartPanel({ points }: { points: GpsPoint[] }) {
+function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: number }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
   const hasSatellites = points.some((p) => p.satellites !== undefined);
@@ -678,6 +678,22 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
   const enuRange = enuMax - enuMin || 1;
   const enuToY = (v: number) => chartHeight - ((v - enuMin) / enuRange) * chartHeight;
 
+  // Seek position derived from the original (unsampled) index
+  const seekX = (seekIndex / (points.length - 1 || 1)) * chartWidth;
+  const seekSpeedY =
+    points[seekIndex]?.speed !== undefined
+      ? chartHeight - ((points[seekIndex].speed ?? 0) / (maxSpeed || 1)) * chartHeight
+      : null;
+  const seekAltY =
+    points[seekIndex]?.altitude !== undefined
+      ? chartHeight - ((points[seekIndex].altitude! - minAlt) / altRange) * chartHeight
+      : null;
+  const seekSatY =
+    points[seekIndex]?.satellites !== undefined
+      ? chartHeight - (points[seekIndex].satellites! / (maxSat || 1)) * chartHeight
+      : null;
+  const seekEnuY = enuData[seekIndex] !== undefined ? enuToY(enuData[seekIndex].e) : null;
+
   // Scatter — equal aspect ratio around centroid
   const scatterEMin = scatterData.length ? Math.min(...scatterData.map((d) => d.e)) : -1;
   const scatterEMax = scatterData.length ? Math.max(...scatterData.map((d) => d.e)) : 1;
@@ -737,6 +753,11 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             })}
             {hoveredPoint?.chartId === "speed" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+            {/* Seek position marker */}
+            <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+            {seekSpeedY !== null && (
+              <circle cx={seekX} cy={seekSpeedY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+            )}
           </svg>
           <p className="text-xs text-gray-400 text-right">最大 {maxSpeed.toFixed(1)} km/h</p>
         </div>
@@ -785,6 +806,11 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             })}
             {hoveredPoint?.chartId === "alt" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+            {/* Seek position marker */}
+            <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+            {seekAltY !== null && (
+              <circle cx={seekX} cy={seekAltY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+            )}
           </svg>
           <p className="text-xs text-gray-400 text-right">
             {minAlt.toFixed(0)}m〜{maxAlt.toFixed(0)}m
@@ -835,6 +861,11 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             })}
             {hoveredPoint?.chartId === "satellites" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+            {/* Seek position marker */}
+            <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+            {seekSatY !== null && (
+              <circle cx={seekX} cy={seekSatY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+            )}
           </svg>
           <p className="text-xs text-gray-400 text-right">最大 {maxSat} 個</p>
         </div>
@@ -897,6 +928,18 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             ))}
             {hoveredPoint?.chartId === "scatter" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines, scatterSize, scatterSize)}
+            {/* Seek position marker */}
+            {enuData[seekIndex] !== undefined && (
+              <circle
+                cx={toSX(enuData[seekIndex].e)}
+                cy={toSY(enuData[seekIndex].n)}
+                r={5}
+                fill="#f97316"
+                stroke="white"
+                strokeWidth="1.5"
+                style={{ pointerEvents: "none" }}
+              />
+            )}
           </svg>
           <p className="text-xs text-gray-400 text-right">
             span {scatterSpan.toFixed(2)} m
@@ -975,6 +1018,11 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             })}
             {hoveredPoint?.chartId === "enu" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+            {/* Seek position marker */}
+            <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+            {seekEnuY !== null && (
+              <circle cx={seekX} cy={seekEnuY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+            )}
           </svg>
           <div className="flex gap-3 mt-1 text-xs">
             <span className="text-blue-500">■ East</span>
