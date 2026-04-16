@@ -250,13 +250,18 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       map.panTo(latlng, { animate: false });
     }
 
-    // Determine bearing for arrow marker
+    // Determine bearing for arrow marker.
+    // In heading-up mode the map is already rotated so that the travel direction
+    // points up, and Leaflet keeps marker panes screen-aligned.  The arrow must
+    // therefore always point straight up (0°) so it visually matches "forward".
+    // In north-up mode the arrow is rotated to the absolute travel bearing.
     const bearing = resolvePointBearing(seekPoint, seekIndex, points);
+    const arrowDeg = headingUp ? 0 : bearing;
 
     if (markerType === "arrow") {
       if (seekMarkerRef.current instanceof L.Marker) {
         seekMarkerRef.current.setLatLng(latlng);
-        seekMarkerRef.current.setIcon(buildArrowIcon(bearing));
+        seekMarkerRef.current.setIcon(buildArrowIcon(arrowDeg));
         seekMarkerRef.current.setTooltipContent(content);
       } else {
         // Remove old circle marker if switching from circle to arrow
@@ -265,7 +270,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
           seekMarkerRef.current = null;
         }
         seekMarkerRef.current = L.marker(latlng, {
-          icon: buildArrowIcon(bearing),
+          icon: buildArrowIcon(arrowDeg),
           interactive: false,
           pane: "seekMarkerPane",
         })
@@ -295,7 +300,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
           .addTo(map);
       }
     }
-  }, [seekPoint, seekIndex, markerType, points, centerOnMarker]);
+  }, [seekPoint, seekIndex, markerType, points, centerOnMarker, headingUp]);
 
   // Update map bearing for heading-up / north-up mode
   useEffect(() => {
@@ -308,7 +313,11 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       return;
     }
 
-    map.setBearing(resolvePointBearing(seekPoint, seekIndex, points));
+    // Negate the travel bearing so the direction of travel points up on screen.
+    // leaflet-rotate applies a clockwise CSS rotation equal to the bearing value,
+    // so we need the complementary angle to bring the travel direction to the top.
+    const travelBearing = resolvePointBearing(seekPoint, seekIndex, points);
+    map.setBearing((360 - travelBearing) % 360);
   }, [headingUp, seekPoint, seekIndex, points]);
 
   return (
