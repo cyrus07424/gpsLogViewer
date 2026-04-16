@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import type { GpsPoint } from "./nmeaParser";
 
 export interface ParsedKml {
@@ -72,4 +73,27 @@ export function parseKml(content: string): ParsedKml {
   }
 
   return { points, errors };
+}
+
+/**
+ * Parse a KMZ (zipped KML) file from an ArrayBuffer.
+ * Extracts the first .kml entry in the ZIP archive and parses it.
+ */
+export async function parseKmz(buffer: ArrayBuffer): Promise<ParsedKml> {
+  const errors: string[] = [];
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    // Find the first .kml file (doc.kml is the conventional name)
+    const kmlFile =
+      zip.file("doc.kml") ??
+      Object.values(zip.files).find((f) => !f.dir && f.name.toLowerCase().endsWith(".kml"));
+    if (!kmlFile) {
+      return { points: [], errors: ["KMZファイル内にKMLファイルが見つかりませんでした。"] };
+    }
+    const kmlContent = await kmlFile.async("string");
+    return parseKml(kmlContent);
+  } catch (e) {
+    errors.push(`KMZファイルの解析に失敗しました: ${e}`);
+    return { points: [], errors };
+  }
 }

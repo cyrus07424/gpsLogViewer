@@ -4,10 +4,11 @@ import { useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
-import { parseKml } from "../lib/kmlParser";
+import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
+import { exportToKml } from "../lib/kmlExporter";
 
-type FileFormat = "nmea" | "gpx" | "kml" | "unknown";
+type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -44,7 +45,8 @@ function StatItem({ label, value }: StatItemProps) {
 function detectFormat(fileName: string, content: string): FileFormat {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".gpx")) return "gpx";
-  if (lower.endsWith(".kml") || lower.endsWith(".kmz")) return "kml";
+  if (lower.endsWith(".kmz")) return "kmz";
+  if (lower.endsWith(".kml")) return "kml";
   if (lower.endsWith(".nmea") || lower.endsWith(".nma") || lower.endsWith(".log") || lower.endsWith(".txt")) return "nmea";
   // Content-based detection: check for specific root elements
   const trimmed = content.trimStart();
@@ -71,6 +73,34 @@ export default function NmeaViewer() {
   const processFile = useCallback((file: File) => {
     setIsLoading(true);
     setFileName(file.name);
+
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".kmz")) {
+      // KMZ is a binary ZIP archive — read as ArrayBuffer
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const buffer = e.target?.result as ArrayBuffer;
+        setFileFormat("kmz");
+        const result = await parseKmz(buffer);
+        const filledPts = fillMissingSpeed(result.points);
+        setPoints(filledPts);
+        setStats(computeStats(filledPts));
+        setErrors(result.errors);
+        setRawSentences([]);
+        setIsLoading(false);
+        if (result.points.length > 0) {
+          setIsPanelOpen(true);
+          setActiveTab("stats");
+        }
+      };
+      reader.onerror = () => {
+        setErrors(["ファイルの読み込みに失敗しました。"]);
+        setIsLoading(false);
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
@@ -193,7 +223,7 @@ export default function NmeaViewer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".nmea,.txt,.log,.nma,.gpx,.kml"
+                accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -210,28 +240,39 @@ export default function NmeaViewer() {
                     📂 GPSログファイルをここにドロップ
                   </p>
                   <p className="text-xs text-gray-400 mt-1">またはクリックして選択</p>
-                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .txt / .log)</p>
+                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .kmz / .txt / .log)</p>
                 </div>
               )}
             </div>
             {fileName && (
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={handleClear}
-                  className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
-                >
-                  クリア
-                </button>
-                {fileFormat === "nmea" && points.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1">
+                <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      const gpxName = fileName.replace(/\.[^.]+$/, "") + ".gpx";
-                      exportToGpx(points, gpxName);
-                    }}
-                    className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium"
+                    onClick={handleClear}
+                    className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
                   >
-                    ⬇ GPXに変換
+                    クリア
                   </button>
+                </div>
+                {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz") && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {(fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz") && (
+                      <button
+                        onClick={() => exportToGpx(points, fileName.replace(/\.[^.]+$/, "") + ".gpx")}
+                        className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 rounded px-2 py-1"
+                      >
+                        ⬇ GPXに変換
+                      </button>
+                    )}
+                    {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz") && (
+                      <button
+                        onClick={() => exportToKml(points, fileName.replace(/\.[^.]+$/, "") + ".kml")}
+                        className="flex-1 text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 font-medium border border-green-300 dark:border-green-700 rounded px-2 py-1"
+                      >
+                        ⬇ KMLに変換
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
