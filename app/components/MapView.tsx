@@ -240,10 +240,16 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       .bindTooltip(buildTooltipContent(endPoint, "ゴール"), { sticky: true })
       .addTo(layer);
 
-    // Fit map to track bounds
+  }, [points, colorBySpeed]);
+
+  // Fit map to track bounds only when points change (not when colorBySpeed changes)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || points.length === 0) return;
+    const latLngs = points.map((p) => [p.lat, p.lng] as [number, number]);
     const bounds = L.latLngBounds(latLngs);
     map.fitBounds(bounds, { padding: [40, 40] });
-  }, [points, colorBySpeed]);
+  }, [points]);
 
   // Update seek position marker
   useEffect(() => {
