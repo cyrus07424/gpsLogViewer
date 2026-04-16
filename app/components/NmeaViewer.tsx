@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
-import { parseKml } from "../lib/kmlParser";
+import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
+import { exportToKml } from "../lib/kmlExporter";
 
-type FileFormat = "nmea" | "gpx" | "kml" | "unknown";
+type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -44,7 +45,8 @@ function StatItem({ label, value }: StatItemProps) {
 function detectFormat(fileName: string, content: string): FileFormat {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".gpx")) return "gpx";
-  if (lower.endsWith(".kml") || lower.endsWith(".kmz")) return "kml";
+  if (lower.endsWith(".kmz")) return "kmz";
+  if (lower.endsWith(".kml")) return "kml";
   if (lower.endsWith(".nmea") || lower.endsWith(".nma") || lower.endsWith(".log") || lower.endsWith(".txt")) return "nmea";
   // Content-based detection: check for specific root elements
   const trimmed = content.trimStart();
@@ -71,6 +73,34 @@ export default function NmeaViewer() {
   const processFile = useCallback((file: File) => {
     setIsLoading(true);
     setFileName(file.name);
+
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".kmz")) {
+      // KMZ is a binary ZIP archive — read as ArrayBuffer
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const buffer = e.target?.result as ArrayBuffer;
+        setFileFormat("kmz");
+        const result = await parseKmz(buffer);
+        const filledPts = fillMissingSpeed(result.points);
+        setPoints(filledPts);
+        setStats(computeStats(filledPts));
+        setErrors(result.errors);
+        setRawSentences([]);
+        setIsLoading(false);
+        if (result.points.length > 0) {
+          setIsPanelOpen(true);
+          setActiveTab("stats");
+        }
+      };
+      reader.onerror = () => {
+        setErrors(["ファイルの読み込みに失敗しました。"]);
+        setIsLoading(false);
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
@@ -193,7 +223,7 @@ export default function NmeaViewer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".nmea,.txt,.log,.nma,.gpx,.kml"
+                accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -210,28 +240,39 @@ export default function NmeaViewer() {
                     📂 GPSログファイルをここにドロップ
                   </p>
                   <p className="text-xs text-gray-400 mt-1">またはクリックして選択</p>
-                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .txt / .log)</p>
+                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .kmz / .txt / .log)</p>
                 </div>
               )}
             </div>
             {fileName && (
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={handleClear}
-                  className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
-                >
-                  クリア
-                </button>
-                {fileFormat === "nmea" && points.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1">
+                <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      const gpxName = fileName.replace(/\.[^.]+$/, "") + ".gpx";
-                      exportToGpx(points, gpxName);
-                    }}
-                    className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium"
+                    onClick={handleClear}
+                    className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
                   >
-                    ⬇ GPXに変換
+                    クリア
                   </button>
+                </div>
+                {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz") && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {(fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz") && (
+                      <button
+                        onClick={() => exportToGpx(points, fileName.replace(/\.[^.]+$/, "") + ".gpx")}
+                        className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 rounded px-2 py-1"
+                      >
+                        ⬇ GPXに変換
+                      </button>
+                    )}
+                    {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz") && (
+                      <button
+                        onClick={() => exportToKml(points, fileName.replace(/\.[^.]+$/, "") + ".kml")}
+                        className="flex-1 text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 font-medium border border-green-300 dark:border-green-700 rounded px-2 py-1"
+                      >
+                        ⬇ KMLに変換
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -361,44 +402,71 @@ function StatsPanel({
   );
 }
 
+type ChartId = "speed" | "alt" | "satellites" | "scatter" | "enu";
+
 function ChartPanel({ points }: { points: GpsPoint[] }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
+  const hasSatellites = points.some((p) => p.satellites !== undefined);
+
   const [hoveredPoint, setHoveredPoint] = useState<{
     x: number;
     y: number;
     lines: string[];
-    chartId: "speed" | "alt";
+    chartId: ChartId;
   } | null>(null);
 
-  if (!hasSpeeds && !hasAlt) {
+  // Compute ENU coordinates relative to mean position
+  const enuData = useMemo(() => {
+    if (points.length === 0) return [];
+    const meanLat = points.reduce((s, p) => s + p.lat, 0) / points.length;
+    const meanLng = points.reduce((s, p) => s + p.lng, 0) / points.length;
+    const alts = points.filter((p) => p.altitude !== undefined).map((p) => p.altitude as number);
+    const meanAlt = alts.length > 0 ? alts.reduce((s, a) => s + a, 0) / alts.length : 0;
+    const R = 6371000;
+    const cosLat = Math.cos((meanLat * Math.PI) / 180);
+    return points.map((p) => ({
+      e: R * cosLat * ((p.lng - meanLng) * Math.PI) / 180,
+      n: R * ((p.lat - meanLat) * Math.PI) / 180,
+      u: p.altitude !== undefined ? p.altitude - meanAlt : 0,
+      hasAlt: p.altitude !== undefined,
+      timestamp: p.timestamp,
+    }));
+  }, [points]);
+
+  if (!hasSpeeds && !hasAlt && !hasSatellites && enuData.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        速度・高度データがありません。
+        グラフデータがありません。
       </div>
     );
   }
 
-  // Downsample to max 200 points for chart performance
+  // Downsample to max 200 points for time-series performance
   const step = Math.max(1, Math.floor(points.length / 200));
   const sampled = points.filter((_, i) => i % step === 0);
+  const enuSampled = enuData.filter((_, i) => i % step === 0);
 
-  const maxSpeed = Math.max(...sampled.map((p) => p.speed ?? 0));
-  const altSampled = sampled.filter((p) => p.altitude !== undefined);
-  const minAlt = altSampled.length ? Math.min(...altSampled.map((p) => p.altitude!)) : 0;
-  const maxAlt = altSampled.length ? Math.max(...altSampled.map((p) => p.altitude!)) : 0;
-  const altRange = maxAlt - minAlt || 1;
+  // Scatter: max 500 points
+  const scatterStep = Math.max(1, Math.floor(enuData.length / 500));
+  const scatterData = enuData.filter((_, i) => i % scatterStep === 0);
 
   const chartWidth = 260;
   const chartHeight = 80;
 
-  const renderSvgTooltip = (x: number, y: number, lines: string[]) => {
+  const renderSvgTooltip = (
+    x: number,
+    y: number,
+    lines: string[],
+    cw = chartWidth,
+    ch = chartHeight
+  ) => {
     const PADDING = 5;
     const LINE_H = 13;
-    const tooltipW = 150;
+    const tooltipW = 160;
     const tooltipH = lines.length * LINE_H + PADDING * 2;
-    const tx = x > chartWidth / 2 ? x - tooltipW - 4 : x + 4;
-    const ty = Math.max(2, Math.min(y - tooltipH / 2, chartHeight - tooltipH - 2));
+    const tx = x > cw / 2 ? x - tooltipW - 4 : x + 4;
+    const ty = Math.max(2, Math.min(y - tooltipH / 2, ch - tooltipH - 2));
     return (
       <g style={{ pointerEvents: "none" }}>
         <rect x={tx} y={ty} width={tooltipW} height={tooltipH} rx={3} ry={3} fill="rgba(0,0,0,0.72)" />
@@ -418,13 +486,52 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
     );
   };
 
+  // Speed chart
+  const maxSpeed = Math.max(...sampled.map((p) => p.speed ?? 0));
+
+  // Altitude chart
+  const altSampled = sampled.filter((p) => p.altitude !== undefined);
+  const minAlt = altSampled.length ? Math.min(...altSampled.map((p) => p.altitude!)) : 0;
+  const maxAlt = altSampled.length ? Math.max(...altSampled.map((p) => p.altitude!)) : 0;
+  const altRange = maxAlt - minAlt || 1;
+
+  // Satellites chart
+  const satSampled = sampled.filter((p) => p.satellites !== undefined);
+  const maxSat = satSampled.length ? Math.max(...satSampled.map((p) => p.satellites!)) : 1;
+
+  // ENU deviation chart — common y-axis across E, N (and U if altitude exists)
+  const enuEN = enuSampled;
+  const enuU = enuSampled.filter((d) => d.hasAlt);
+  const allVals = [
+    ...enuEN.map((d) => d.e),
+    ...enuEN.map((d) => d.n),
+    ...(hasAlt ? enuU.map((d) => d.u) : []),
+  ];
+  const enuMin = allVals.length ? Math.min(...allVals) : -1;
+  const enuMax = allVals.length ? Math.max(...allVals) : 1;
+  const enuRange = enuMax - enuMin || 1;
+  const enuToY = (v: number) => chartHeight - ((v - enuMin) / enuRange) * chartHeight;
+
+  // Scatter — equal aspect ratio around centroid
+  const scatterEMin = scatterData.length ? Math.min(...scatterData.map((d) => d.e)) : -1;
+  const scatterEMax = scatterData.length ? Math.max(...scatterData.map((d) => d.e)) : 1;
+  const scatterNMin = scatterData.length ? Math.min(...scatterData.map((d) => d.n)) : -1;
+  const scatterNMax = scatterData.length ? Math.max(...scatterData.map((d) => d.n)) : 1;
+  const scatterSpan = Math.max(scatterEMax - scatterEMin, scatterNMax - scatterNMin, 0.001);
+  const scatterEMid = (scatterEMax + scatterEMin) / 2;
+  const scatterNMid = (scatterNMax + scatterNMin) / 2;
+  const scatterSize = 200;
+  const pad = 10;
+  const inner = scatterSize - pad * 2;
+  const toSX = (e: number) => pad + ((e - scatterEMid) / scatterSpan + 0.5) * inner;
+  const toSY = (n: number) => pad + (1 - ((n - scatterNMid) / scatterSpan + 0.5)) * inner;
+
   return (
     <div className="p-3 space-y-4">
+      {/* Speed */}
       {hasSpeeds && (
         <div>
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-            速度 (km/h)
-          </p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">速度 (km/h)</p>
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
@@ -465,16 +572,14 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
             {hoveredPoint?.chartId === "speed" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
           </svg>
-          <p className="text-xs text-gray-400 text-right">
-            最大 {maxSpeed.toFixed(1)} km/h
-          </p>
+          <p className="text-xs text-gray-400 text-right">最大 {maxSpeed.toFixed(1)} km/h</p>
         </div>
       )}
+
+      {/* Altitude */}
       {hasAlt && (
         <div>
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-            高度 (m)
-          </p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">高度 (m)</p>
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
@@ -518,6 +623,198 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
           <p className="text-xs text-gray-400 text-right">
             {minAlt.toFixed(0)}m〜{maxAlt.toFixed(0)}m
           </p>
+        </div>
+      )}
+
+      {/* Satellites */}
+      {hasSatellites && (
+        <div>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">衛星数</p>
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+            onMouseLeave={() => setHoveredPoint(null)}
+          >
+            <polyline
+              points={satSampled
+                .map((p, i, arr) => {
+                  const x = (i / (arr.length - 1 || 1)) * chartWidth;
+                  const y = chartHeight - (p.satellites! / (maxSat || 1)) * chartHeight;
+                  return `${x},${y}`;
+                })
+                .join(" ")}
+              fill="none"
+              stroke="#a855f7"
+              strokeWidth="1.5"
+            />
+            {satSampled.map((p, i, arr) => {
+              const x = (i / (arr.length - 1 || 1)) * chartWidth;
+              const y = chartHeight - (p.satellites! / (maxSat || 1)) * chartHeight;
+              const lines = [
+                `衛星数: ${p.satellites} 個`,
+                ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
+              ];
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r={6}
+                  fill="transparent"
+                  stroke="none"
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "satellites" })}
+                />
+              );
+            })}
+            {hoveredPoint?.chartId === "satellites" &&
+              renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+          </svg>
+          <p className="text-xs text-gray-400 text-right">最大 {maxSat} 個</p>
+        </div>
+      )}
+
+      {/* Position scatter — East vs North */}
+      {enuData.length > 1 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+            Position scatter — East vs North (m)
+          </p>
+          <svg
+            viewBox={`0 0 ${scatterSize} ${scatterSize}`}
+            className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+            onMouseLeave={() => setHoveredPoint(null)}
+          >
+            {/* Crosshairs at origin (mean position) */}
+            <line
+              x1={toSX(0)} y1={pad}
+              x2={toSX(0)} y2={scatterSize - pad}
+              stroke="#d1d5db" strokeWidth="0.5"
+              aria-label="North axis"
+            >
+              <title>North axis (mean position)</title>
+            </line>
+            <line
+              x1={pad} y1={toSY(0)}
+              x2={scatterSize - pad} y2={toSY(0)}
+              stroke="#d1d5db" strokeWidth="0.5"
+              aria-label="East axis"
+            >
+              <title>East axis (mean position)</title>
+            </line>
+            {/* Axis labels */}
+            <text x={scatterSize - pad - 2} y={toSY(0) - 2} fontSize="10" fill="#9ca3af" textAnchor="end" fontFamily="sans-serif">E</text>
+            <text x={toSX(0) + 2} y={pad + 10} fontSize="10" fill="#9ca3af" fontFamily="sans-serif">N</text>
+            {/* Data points */}
+            {scatterData.map((d, i) => (
+              <circle
+                key={i}
+                cx={toSX(d.e)}
+                cy={toSY(d.n)}
+                r={2}
+                fill="#3b82f6"
+                fillOpacity={0.55}
+                style={{ cursor: "crosshair" }}
+                onMouseEnter={() =>
+                  setHoveredPoint({
+                    x: toSX(d.e),
+                    y: toSY(d.n),
+                    lines: [
+                      `E: ${d.e.toFixed(2)} m`,
+                      `N: ${d.n.toFixed(2)} m`,
+                      ...(d.timestamp ? [d.timestamp.toLocaleString()] : []),
+                    ],
+                    chartId: "scatter",
+                  })
+                }
+              />
+            ))}
+            {hoveredPoint?.chartId === "scatter" &&
+              renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines, scatterSize, scatterSize)}
+          </svg>
+          <p className="text-xs text-gray-400 text-right">
+            span {scatterSpan.toFixed(2)} m
+          </p>
+        </div>
+      )}
+
+      {/* ENU deviation from mean */}
+      {enuData.length > 1 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+            ENU deviation from mean (m)
+          </p>
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+            onMouseLeave={() => setHoveredPoint(null)}
+          >
+            {/* Zero line */}
+            <line
+              x1={0} y1={enuToY(0)}
+              x2={chartWidth} y2={enuToY(0)}
+              stroke="#d1d5db" strokeWidth="0.5" strokeDasharray="3,3"
+            />
+            {/* East (blue) */}
+            <polyline
+              points={enuEN
+                .map((d, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${enuToY(d.e)}`)
+                .join(" ")}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth="1.5"
+            />
+            {/* North (green) */}
+            <polyline
+              points={enuEN
+                .map((d, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${enuToY(d.n)}`)
+                .join(" ")}
+              fill="none"
+              stroke="#10b981"
+              strokeWidth="1.5"
+            />
+            {/* Up (amber, only when altitude available) */}
+            {hasAlt && enuU.length > 1 && (
+              <polyline
+                points={enuU
+                  .map((d, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${enuToY(d.u)}`)
+                  .join(" ")}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="1.5"
+              />
+            )}
+            {/* Hover hit-area per sample */}
+            {enuEN.map((d, i, arr) => {
+              const x = (i / (arr.length - 1 || 1)) * chartWidth;
+              const y = enuToY(d.e);
+              const lines = [
+                `E: ${d.e.toFixed(2)} m`,
+                `N: ${d.n.toFixed(2)} m`,
+                ...(d.hasAlt ? [`U: ${d.u.toFixed(2)} m`] : []),
+                ...(d.timestamp ? [d.timestamp.toLocaleString()] : []),
+              ];
+              return (
+                <rect
+                  key={i}
+                  x={x - 4}
+                  y={0}
+                  width={8}
+                  height={chartHeight}
+                  fill="transparent"
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "enu" })}
+                />
+              );
+            })}
+            {hoveredPoint?.chartId === "enu" &&
+              renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+          </svg>
+          <div className="flex gap-3 mt-1 text-xs">
+            <span className="text-blue-500">■ East</span>
+            <span className="text-emerald-500">■ North</span>
+            {hasAlt && <span className="text-amber-500">■ Up</span>}
+          </div>
         </div>
       )}
     </div>
