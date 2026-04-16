@@ -692,7 +692,6 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
     points[seekIndex]?.satellites !== undefined
       ? chartHeight - (points[seekIndex].satellites! / (maxSat || 1)) * chartHeight
       : null;
-  const seekEnuX = (seekIndex / (points.length - 1 || 1)) * chartWidth;
   const seekEnuY = enuData[seekIndex] !== undefined ? enuToY(enuData[seekIndex].e) : null;
 
   // Scatter — equal aspect ratio around centroid
@@ -1020,9 +1019,9 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
             {hoveredPoint?.chartId === "enu" &&
               renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
             {/* Seek position marker */}
-            <line x1={seekEnuX} y1={0} x2={seekEnuX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+            <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
             {seekEnuY !== null && (
-              <circle cx={seekEnuX} cy={seekEnuY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+              <circle cx={seekX} cy={seekEnuY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
             )}
           </svg>
           <div className="flex gap-3 mt-1 text-xs">
