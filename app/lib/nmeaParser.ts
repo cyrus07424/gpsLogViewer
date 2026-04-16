@@ -122,8 +122,11 @@ function prnToConstellation(prn: number): Constellation {
   if (prn >= 33  && prn <= 64)  return "SBAS";
   if (prn >= 65  && prn <= 96)  return "GLONASS";
   if (prn >= 120 && prn <= 158) return "SBAS";
-  if (prn >= 193 && prn <= 202) return "QZSS";
+  // Check BeiDou before QZSS so that the overlapping range 201–202 is
+  // correctly identified as BeiDou (the QZSS constellation only uses
+  // five practical SVIDs in the 193–197 range).
   if (prn >= 201 && prn <= 235) return "BeiDou";
+  if (prn >= 193 && prn <= 202) return "QZSS";
   if (prn >= 301 && prn <= 336) return "Galileo";
   return "Unknown";
 }

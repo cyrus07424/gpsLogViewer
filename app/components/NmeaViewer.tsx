@@ -922,7 +922,9 @@ function SatellitePanel({
                 {c}
               </span>
             ))}
-          <span className="text-xs text-gray-400">● 捕捉中 / ○ 未使用</span>
+          <span className="text-xs text-gray-400" aria-label="凡例: 塗りつぶし円 = 測位に使用中, 空白円 = 捕捉中だが未使用">
+            <span aria-hidden="true">●</span> 測位使用中 / <span aria-hidden="true">○</span> 捕捉中(未使用)
+          </span>
         </div>
 
         {/* ── Skyplot ── */}
@@ -966,7 +968,7 @@ function SatellitePanel({
             const labelOffset = 7;
             return (
               <g key={`${sat.constellation}:${sat.prn}`}>
-                <title>{`${sat.constellation} PRN${sat.prn} El:${sat.elevation}° Az:${sat.azimuth}° SNR:${sat.snr ?? "—"} dBHz${sat.used ? " ✓使用中" : ""}`}</title>
+                <title>{`${sat.constellation} PRN${sat.prn} 仰角:${sat.elevation}° 方位角:${sat.azimuth}° SNR:${sat.snr ?? "—"} dBHz${sat.used ? " ✓測位使用中" : " (未使用)"}`}</title>
                 {/* Satellite dot: filled = used in fix, outlined = in view only */}
                 <circle
                   cx={x}
