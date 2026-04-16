@@ -74,26 +74,6 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
 
     const latLngs = points.map((p) => [p.lat, p.lng] as [number, number]);
 
-    if (colorBySpeed && maxSpeed && maxSpeed > 0) {
-      // Draw colored segments
-      for (let i = 1; i < points.length; i++) {
-        const color = speedColor(points[i].speed, maxSpeed);
-        L.polyline(
-          [
-            [points[i - 1].lat, points[i - 1].lng],
-            [points[i].lat, points[i].lng],
-          ],
-          { color, weight: 4, opacity: 0.85 }
-        ).addTo(layer);
-      }
-    } else {
-      L.polyline(latLngs, {
-        color: "#3b82f6",
-        weight: 4,
-        opacity: 0.85,
-      }).addTo(layer);
-    }
-
     const buildTooltipContent = (p: GpsPoint, label?: string): string =>
       [
         label ? `<b>${label}</b>` : "",
@@ -105,6 +85,60 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
       ]
         .filter(Boolean)
         .join("<br>");
+
+    // Helper: find the nearest GPS point to a given latlng
+    const findNearest = (latlng: L.LatLng): GpsPoint => {
+      let nearest = points[0];
+      let minDist = Infinity;
+      for (const p of points) {
+        const dlat = p.lat - latlng.lat;
+        const dlng = p.lng - latlng.lng;
+        const d = dlat * dlat + dlng * dlng;
+        if (d < minDist) { minDist = d; nearest = p; }
+      }
+      return nearest;
+    };
+
+    if (colorBySpeed && maxSpeed && maxSpeed > 0) {
+      // Draw colored segments (non-interactive, visual only)
+      for (let i = 1; i < points.length; i++) {
+        const color = speedColor(points[i].speed, maxSpeed);
+        L.polyline(
+          [
+            [points[i - 1].lat, points[i - 1].lng],
+            [points[i].lat, points[i].lng],
+          ],
+          { color, weight: 4, opacity: 0.85, interactive: false }
+        ).addTo(layer);
+      }
+      // Invisible wide overlay polyline for tooltip interaction along the whole track
+      const hoverLine = L.polyline(latLngs, {
+        weight: 20,
+        opacity: 0.001,
+        color: "#000",
+        interactive: true,
+      });
+      hoverLine.bindTooltip("", { sticky: true });
+      hoverLine.on("mousemove", (e: L.LeafletMouseEvent) => {
+        const nearest = findNearest(e.latlng);
+        const content = buildTooltipContent(nearest);
+        if (content) hoverLine.setTooltipContent(content);
+      });
+      hoverLine.addTo(layer);
+    } else {
+      const pl = L.polyline(latLngs, {
+        color: "#3b82f6",
+        weight: 4,
+        opacity: 0.85,
+      });
+      pl.bindTooltip("", { sticky: true });
+      pl.on("mousemove", (e: L.LeafletMouseEvent) => {
+        const nearest = findNearest(e.latlng);
+        const content = buildTooltipContent(nearest);
+        if (content) pl.setTooltipContent(content);
+      });
+      pl.addTo(layer);
+    }
 
     // Start marker (green)
     const startPoint = points[0];
@@ -129,22 +163,6 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
     L.marker([endPoint.lat, endPoint.lng], { icon: endIcon })
       .bindTooltip(buildTooltipContent(endPoint, "ゴール"), { sticky: true })
       .addTo(layer);
-
-    // Add hoverable waypoint markers every Nth point
-    const step = Math.max(1, Math.floor(points.length / 50));
-    for (let i = 0; i < points.length; i += step) {
-      const p = points[i];
-      const dotIcon = L.circleMarker([p.lat, p.lng], {
-        radius: 4,
-        fillColor: colorBySpeed ? speedColor(p.speed, maxSpeed) : "#3b82f6",
-        color: "#fff",
-        weight: 1,
-        fillOpacity: 0.9,
-      });
-      const tooltip = buildTooltipContent(p);
-      if (tooltip) dotIcon.bindTooltip(tooltip, { sticky: true });
-      dotIcon.addTo(layer);
-    }
 
     // Fit map to track bounds
     const bounds = L.latLngBounds(latLngs);

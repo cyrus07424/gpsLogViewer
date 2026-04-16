@@ -364,6 +364,12 @@ function StatsPanel({
 function ChartPanel({ points }: { points: GpsPoint[] }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    x: number;
+    y: number;
+    lines: string[];
+    chartId: "speed" | "alt";
+  } | null>(null);
 
   if (!hasSpeeds && !hasAlt) {
     return (
@@ -378,12 +384,39 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
   const sampled = points.filter((_, i) => i % step === 0);
 
   const maxSpeed = Math.max(...sampled.map((p) => p.speed ?? 0));
-  const minAlt = Math.min(...sampled.filter((p) => p.altitude !== undefined).map((p) => p.altitude!));
-  const maxAlt = Math.max(...sampled.filter((p) => p.altitude !== undefined).map((p) => p.altitude!));
+  const altSampled = sampled.filter((p) => p.altitude !== undefined);
+  const minAlt = altSampled.length ? Math.min(...altSampled.map((p) => p.altitude!)) : 0;
+  const maxAlt = altSampled.length ? Math.max(...altSampled.map((p) => p.altitude!)) : 0;
   const altRange = maxAlt - minAlt || 1;
 
   const chartWidth = 260;
   const chartHeight = 80;
+
+  const renderSvgTooltip = (x: number, y: number, lines: string[]) => {
+    const PADDING = 5;
+    const LINE_H = 13;
+    const tooltipW = 150;
+    const tooltipH = lines.length * LINE_H + PADDING * 2;
+    const tx = x > chartWidth / 2 ? x - tooltipW - 4 : x + 4;
+    const ty = Math.max(2, Math.min(y - tooltipH / 2, chartHeight - tooltipH - 2));
+    return (
+      <g style={{ pointerEvents: "none" }}>
+        <rect x={tx} y={ty} width={tooltipW} height={tooltipH} rx={3} ry={3} fill="rgba(0,0,0,0.72)" />
+        {lines.map((line, i) => (
+          <text
+            key={i}
+            x={tx + PADDING}
+            y={ty + PADDING + (i + 1) * LINE_H - 2}
+            fontSize="10"
+            fill="white"
+            fontFamily="sans-serif"
+          >
+            {line}
+          </text>
+        ))}
+      </g>
+    );
+  };
 
   return (
     <div className="p-3 space-y-4">
@@ -395,6 +428,7 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+            onMouseLeave={() => setHoveredPoint(null)}
           >
             <polyline
               points={sampled
@@ -408,6 +442,28 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
               stroke="#3b82f6"
               strokeWidth="1.5"
             />
+            {sampled.map((p, i) => {
+              const x = (i / (sampled.length - 1 || 1)) * chartWidth;
+              const y = chartHeight - ((p.speed ?? 0) / (maxSpeed || 1)) * chartHeight;
+              const lines = [
+                `速度: ${(p.speed ?? 0).toFixed(1)} km/h`,
+                ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
+              ];
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r={6}
+                  fill="transparent"
+                  stroke="none"
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "speed" })}
+                />
+              );
+            })}
+            {hoveredPoint?.chartId === "speed" &&
+              renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
           </svg>
           <p className="text-xs text-gray-400 text-right">
             最大 {maxSpeed.toFixed(1)} km/h
@@ -422,10 +478,10 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+            onMouseLeave={() => setHoveredPoint(null)}
           >
             <polyline
-              points={sampled
-                .filter((p) => p.altitude !== undefined)
+              points={altSampled
                 .map((p, i, arr) => {
                   const x = (i / (arr.length - 1 || 1)) * chartWidth;
                   const y = chartHeight - ((p.altitude! - minAlt) / altRange) * chartHeight;
@@ -436,6 +492,28 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
               stroke="#10b981"
               strokeWidth="1.5"
             />
+            {altSampled.map((p, i, arr) => {
+              const x = (i / (arr.length - 1 || 1)) * chartWidth;
+              const y = chartHeight - ((p.altitude! - minAlt) / altRange) * chartHeight;
+              const lines = [
+                `高度: ${p.altitude!.toFixed(1)} m`,
+                ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
+              ];
+              return (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r={6}
+                  fill="transparent"
+                  stroke="none"
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "alt" })}
+                />
+              );
+            })}
+            {hoveredPoint?.chartId === "alt" &&
+              renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
           </svg>
           <p className="text-xs text-gray-400 text-right">
             {minAlt.toFixed(0)}m〜{maxAlt.toFixed(0)}m
