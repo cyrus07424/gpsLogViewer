@@ -82,6 +82,7 @@ export default function NmeaViewer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(10);
   const [centerOnMarker, setCenterOnMarker] = useState(false);
+  const [headingUp, setHeadingUp] = useState(false);
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -282,6 +283,7 @@ export default function NmeaViewer() {
         seekIndex={seekIndex}
         markerType={markerType}
         centerOnMarker={centerOnMarker}
+        headingUp={headingUp}
       />
 
       {/* Top-right controls */}
@@ -520,6 +522,21 @@ export default function NmeaViewer() {
             aria-pressed={centerOnMarker}
           >
             ⊕
+          </button>
+
+          {/* Heading-up / North-up toggle */}
+          <button
+            onClick={() => setHeadingUp((v) => !v)}
+            className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded shadow-sm text-base transition-colors ${
+              headingUp
+                ? "bg-blue-600 hover:bg-blue-700 text-white border border-blue-600"
+                : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
+            }`}
+            title={headingUp ? "ヘディングアップ: ON（クリックでノースアップへ）" : "ノースアップ: ON（クリックでヘディングアップへ）"}
+            aria-label={headingUp ? "ノースアップに切り替え" : "ヘディングアップに切り替え"}
+            aria-pressed={headingUp}
+          >
+            🧭
           </button>
 
           {/* Seekbar slider */}
