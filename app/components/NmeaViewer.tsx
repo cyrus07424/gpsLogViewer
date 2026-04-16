@@ -3,6 +3,11 @@
 import { useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { parseNmea, computeStats, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
+import { parseGpx } from "../lib/gpxParser";
+import { parseKml } from "../lib/kmlParser";
+import { exportToGpx } from "../lib/gpxExporter";
+
+type FileFormat = "nmea" | "gpx" | "kml" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -36,10 +41,24 @@ function StatItem({ label, value }: StatItemProps) {
   );
 }
 
+function detectFormat(fileName: string, content: string): FileFormat {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".gpx")) return "gpx";
+  if (lower.endsWith(".kml") || lower.endsWith(".kmz")) return "kml";
+  if (lower.endsWith(".nmea") || lower.endsWith(".nma") || lower.endsWith(".log") || lower.endsWith(".txt")) return "nmea";
+  // Content-based detection: check for specific root elements
+  const trimmed = content.trimStart();
+  if (trimmed.includes("<gpx")) return "gpx";
+  if (trimmed.includes("<kml")) return "kml";
+  if (trimmed.startsWith("$")) return "nmea";
+  return "unknown";
+}
+
 export default function NmeaViewer() {
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [stats, setStats] = useState<TrackStats | null>(null);
   const [fileName, setFileName] = useState<string>("");
+  const [fileFormat, setFileFormat] = useState<FileFormat>("unknown");
   const [errors, setErrors] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -55,13 +74,35 @@ export default function NmeaViewer() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
-      const result = parseNmea(content);
-      setPoints(result.points);
-      setStats(computeStats(result.points));
-      setErrors(result.errors);
-      setRawSentences(result.rawSentences);
+      const fmt = detectFormat(file.name, content);
+      setFileFormat(fmt);
+
+      let pts: GpsPoint[] = [];
+      let errs: string[] = [];
+      let raw: string[] = [];
+
+      if (fmt === "gpx") {
+        const result = parseGpx(content);
+        pts = result.points;
+        errs = result.errors;
+      } else if (fmt === "kml") {
+        const result = parseKml(content);
+        pts = result.points;
+        errs = result.errors;
+      } else {
+        // Default to NMEA (including "unknown")
+        const result = parseNmea(content);
+        pts = result.points;
+        errs = result.errors;
+        raw = result.rawSentences;
+      }
+
+      setPoints(pts);
+      setStats(computeStats(pts));
+      setErrors(errs);
+      setRawSentences(raw);
       setIsLoading(false);
-      if (result.points.length > 0) {
+      if (pts.length > 0) {
         setIsPanelOpen(true);
         setActiveTab("stats");
       }
@@ -104,6 +145,7 @@ export default function NmeaViewer() {
     setPoints([]);
     setStats(null);
     setFileName("");
+    setFileFormat("unknown");
     setErrors([]);
     setRawSentences([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -130,7 +172,7 @@ export default function NmeaViewer() {
         <div className="absolute top-0 left-0 bottom-0 z-[999] w-80 bg-white dark:bg-gray-900 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
           <div className="bg-blue-600 text-white px-4 py-3 flex-shrink-0">
-            <h1 className="text-lg font-bold">🗺 NMEA Viewer</h1>
+            <h1 className="text-lg font-bold">🗺 GPS Log Viewer</h1>
             <p className="text-xs text-blue-200">GPS履歴マップ表示・分析ツール</p>
           </div>
 
@@ -150,7 +192,7 @@ export default function NmeaViewer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".nmea,.txt,.log,.nma"
+                accept=".nmea,.txt,.log,.nma,.gpx,.kml"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -164,20 +206,33 @@ export default function NmeaViewer() {
               ) : (
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    📂 NMEAファイルをここにドロップ
+                    📂 GPSログファイルをここにドロップ
                   </p>
                   <p className="text-xs text-gray-400 mt-1">またはクリックして選択</p>
-                  <p className="text-xs text-gray-400">(.nmea / .txt / .log)</p>
+                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .txt / .log)</p>
                 </div>
               )}
             </div>
             {fileName && (
-              <button
-                onClick={handleClear}
-                className="mt-2 w-full text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
-              >
-                クリア
-              </button>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={handleClear}
+                  className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
+                >
+                  クリア
+                </button>
+                {fileFormat === "nmea" && points.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const gpxName = fileName.replace(/\.[^.]+$/, "") + ".gpx";
+                      exportToGpx(points, gpxName);
+                    }}
+                    className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium"
+                  >
+                    ⬇ GPXに変換
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -223,7 +278,7 @@ export default function NmeaViewer() {
                   <ChartPanel points={points} />
                 )}
                 {activeTab === "raw" && (
-                  <RawPanel sentences={rawSentences} />
+                  <RawPanel sentences={rawSentences} fileFormat={fileFormat} />
                 )}
               </div>
             </>
@@ -390,7 +445,14 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
   );
 }
 
-function RawPanel({ sentences }: { sentences: string[] }) {
+function RawPanel({ sentences, fileFormat }: { sentences: string[]; fileFormat: FileFormat }) {
+  if (fileFormat !== "nmea" || sentences.length === 0) {
+    return (
+      <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+        RAWデータはNMEAファイルのみ表示できます。
+      </div>
+    );
+  }
   return (
     <div className="p-3">
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
