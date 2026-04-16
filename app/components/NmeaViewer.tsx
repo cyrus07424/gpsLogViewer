@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats } from "../lib/nmeaParser";
+import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats, type SatelliteInfo, type Constellation } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
 import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
@@ -65,8 +65,9 @@ export default function NmeaViewer() {
   const [isDragging, setIsDragging] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"stats" | "chart" | "raw">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "chart" | "satellite" | "raw">("stats");
   const [rawSentences, setRawSentences] = useState<string[]>([]);
+  const [lastSatellites, setLastSatellites] = useState<SatelliteInfo[]>([]);
   const [colorBySpeed, setColorBySpeed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +88,7 @@ export default function NmeaViewer() {
         setStats(computeStats(filledPts));
         setErrors(result.errors);
         setRawSentences([]);
+        setLastSatellites([]);
         setIsLoading(false);
         if (result.points.length > 0) {
           setIsPanelOpen(true);
@@ -110,6 +112,7 @@ export default function NmeaViewer() {
       let pts: GpsPoint[] = [];
       let errs: string[] = [];
       let raw: string[] = [];
+      let sats: SatelliteInfo[] = [];
 
       if (fmt === "gpx") {
         const result = parseGpx(content);
@@ -125,6 +128,7 @@ export default function NmeaViewer() {
         pts = result.points;
         errs = result.errors;
         raw = result.rawSentences;
+        sats = result.lastSatellites;
       }
 
       const filledPts = fillMissingSpeed(pts);
@@ -132,6 +136,7 @@ export default function NmeaViewer() {
       setStats(computeStats(filledPts));
       setErrors(errs);
       setRawSentences(raw);
+      setLastSatellites(sats);
       setIsLoading(false);
       if (pts.length > 0) {
         setIsPanelOpen(true);
@@ -179,6 +184,7 @@ export default function NmeaViewer() {
     setFileFormat("unknown");
     setErrors([]);
     setRawSentences([]);
+    setLastSatellites([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -297,7 +303,7 @@ export default function NmeaViewer() {
           {points.length > 0 && (
             <>
               <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                {(["stats", "chart", "raw"] as const).map((tab) => (
+                {(["stats", "chart", "satellite", "raw"] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -307,7 +313,7 @@ export default function NmeaViewer() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
-                    {tab === "stats" ? "統計" : tab === "chart" ? "グラフ" : "RAW"}
+                    {tab === "stats" ? "統計" : tab === "chart" ? "グラフ" : tab === "satellite" ? "衛星" : "RAW"}
                   </button>
                 ))}
               </div>
@@ -318,6 +324,9 @@ export default function NmeaViewer() {
                 )}
                 {activeTab === "chart" && (
                   <ChartPanel points={points} />
+                )}
+                {activeTab === "satellite" && (
+                  <SatellitePanel satellites={lastSatellites} fileFormat={fileFormat} />
                 )}
                 {activeTab === "raw" && (
                   <RawPanel sentences={rawSentences} fileFormat={fileFormat} />
@@ -382,6 +391,26 @@ function StatsPanel({
           </>
         )}
       </div>
+
+      {/* Position accuracy statistics */}
+      {stats.cep50 !== undefined && stats.drms2 !== undefined && (
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">測位精度統計</p>
+          <div className="grid grid-cols-2 gap-3">
+            <StatItem label="CEP 50%" value={`${stats.cep50.toFixed(2)} m`} />
+            <StatItem label="2drms" value={`${stats.drms2.toFixed(2)} m`} />
+            {stats.meanLat !== undefined && stats.meanLng !== undefined && (
+              <>
+                <StatItem label="平均緯度" value={stats.meanLat.toFixed(6) + "°"} />
+                <StatItem label="平均経度" value={stats.meanLng.toFixed(6) + "°"} />
+              </>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            ※ CEP 50%: 全測位点の50%が収まる半径 / 2drms: 2×√(σ²E+σ²N)
+          </p>
+        </div>
+      )}
 
       {/* Display options */}
       <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -818,6 +847,301 @@ function ChartPanel({ points }: { points: GpsPoint[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Satellite Panel ──────────────────────────────────────────────────────────
+
+/** Colour scheme per satellite constellation. */
+const CONSTELLATION_COLORS: Record<Constellation, string> = {
+  GPS:      "#3b82f6", // blue
+  GLONASS:  "#ef4444", // red
+  Galileo:  "#10b981", // green
+  BeiDou:   "#f59e0b", // amber
+  QZSS:     "#a855f7", // purple
+  SBAS:     "#6b7280", // gray
+  Unknown:  "#9ca3af", // light gray
+};
+
+function SatellitePanel({
+  satellites,
+  fileFormat,
+}: {
+  satellites: SatelliteInfo[];
+  fileFormat: FileFormat;
+}) {
+  if (fileFormat !== "nmea") {
+    return (
+      <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+        衛星データはNMEAファイルのみ表示できます。
+      </div>
+    );
+  }
+  if (satellites.length === 0) {
+    return (
+      <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+        衛星データがありません (GSVセンテンスが含まれていないか確認してください)。
+      </div>
+    );
+  }
+
+  const SIZE  = 200; // viewBox side length for skyplot
+  const CX    = SIZE / 2;
+  const CY    = SIZE / 2;
+  const R     = 90;  // radius of the 0° elevation ring
+
+  /**
+   * Convert elevation / azimuth to SVG (x, y) on the polar plot.
+   * 90° elevation → centre, 0° elevation → outer edge.
+   * 0° azimuth = North = top.
+   */
+  function toSkyXY(elevation: number, azimuth: number) {
+    const r   = R * (1 - Math.max(0, Math.min(90, elevation)) / 90);
+    const rad = (azimuth * Math.PI) / 180;
+    return {
+      x: CX + r * Math.sin(rad),
+      y: CY - r * Math.cos(rad),
+    };
+  }
+
+  return (
+    <div className="p-3 space-y-4">
+      {/* Legend */}
+      <div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+          衛星 ({satellites.length} 機) — スカイプロット
+        </p>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
+          {(Object.entries(CONSTELLATION_COLORS) as [Constellation, string][])
+            .filter(([c]) => satellites.some((s) => s.constellation === c))
+            .map(([c, color]) => (
+              <span key={c} className="text-xs flex items-center gap-1">
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <circle cx="5" cy="5" r="4" fill={color} />
+                </svg>
+                {c}
+              </span>
+            ))}
+          <span className="text-xs text-gray-400" aria-label="凡例: 塗りつぶし円 = 測位に使用中, 空白円 = 捕捉中だが未使用">
+            <span aria-hidden="true">●</span> 測位使用中 / <span aria-hidden="true">○</span> 捕捉中(未使用)
+          </span>
+        </div>
+
+        {/* ── Skyplot ── */}
+        <svg
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+          aria-label="Skyplot"
+        >
+          {/* Elevation rings: 0°, 30°, 60°, 90° */}
+          {[0, 30, 60].map((el) => {
+            const r = R * (1 - el / 90);
+            return (
+              <circle
+                key={el}
+                cx={CX}
+                cy={CY}
+                r={r}
+                fill="none"
+                stroke="#d1d5db"
+                strokeWidth="0.5"
+              />
+            );
+          })}
+          {/* Crosshairs */}
+          <line x1={CX} y1={CY - R} x2={CX} y2={CY + R} stroke="#d1d5db" strokeWidth="0.5" />
+          <line x1={CX - R} y1={CY} x2={CX + R} y2={CY} stroke="#d1d5db" strokeWidth="0.5" />
+          {/* Cardinal direction labels */}
+          <text x={CX} y={CY - R - 4} textAnchor="middle" fontSize="9" fill="#9ca3af" fontFamily="sans-serif">N</text>
+          <text x={CX} y={CY + R + 11} textAnchor="middle" fontSize="9" fill="#9ca3af" fontFamily="sans-serif">S</text>
+          <text x={CX + R + 4} y={CY + 3} textAnchor="start" fontSize="9" fill="#9ca3af" fontFamily="sans-serif">E</text>
+          <text x={CX - R - 4} y={CY + 3} textAnchor="end" fontSize="9" fill="#9ca3af" fontFamily="sans-serif">W</text>
+          {/* Elevation ring labels */}
+          <text x={CX + 2} y={CY - R * (1 - 30 / 90) - 2} fontSize="7" fill="#9ca3af" fontFamily="sans-serif">30°</text>
+          <text x={CX + 2} y={CY - R * (1 - 60 / 90) - 2} fontSize="7" fill="#9ca3af" fontFamily="sans-serif">60°</text>
+
+          {/* Satellites */}
+          {satellites.map((sat) => {
+            const { x, y } = toSkyXY(sat.elevation, sat.azimuth);
+            const color = CONSTELLATION_COLORS[sat.constellation];
+            const r = 6;
+            const labelOffset = 7;
+            return (
+              <g key={`${sat.constellation}:${sat.prn}`}>
+                <title>{`${sat.constellation} PRN${sat.prn} 仰角:${sat.elevation}° 方位角:${sat.azimuth}° SNR:${sat.snr ?? "—"} dBHz${sat.used ? " ✓測位使用中" : " (未使用)"}`}</title>
+                {/* Satellite dot: filled = used in fix, outlined = in view only */}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={r}
+                  fill={sat.used ? color : "none"}
+                  stroke={color}
+                  strokeWidth={1.5}
+                />
+                {/* PRN label */}
+                <text
+                  x={x + labelOffset}
+                  y={y + 3}
+                  fontSize="7"
+                  fill={color}
+                  fontFamily="sans-serif"
+                  fontWeight={sat.used ? "bold" : "normal"}
+                >
+                  {sat.prn}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* ── SNR Bar Chart ── */}
+      <div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+          SNR (信号強度) — dBHz
+        </p>
+        <SkyplotSnrBars satellites={satellites} />
+      </div>
+
+      {/* ── Satellite Table ── */}
+      <div>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+          衛星一覧
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left py-1 pr-2">衛星</th>
+                <th className="text-right py-1 pr-2">仰角</th>
+                <th className="text-right py-1 pr-2">方位角</th>
+                <th className="text-right py-1 pr-2">SNR</th>
+                <th className="text-center py-1">使用</th>
+              </tr>
+            </thead>
+            <tbody>
+              {satellites.map((sat) => {
+                const color = CONSTELLATION_COLORS[sat.constellation];
+                return (
+                  <tr
+                    key={`${sat.constellation}:${sat.prn}`}
+                    className="border-b border-gray-100 dark:border-gray-800"
+                  >
+                    <td className="py-0.5 pr-2 font-medium" style={{ color }}>
+                      {sat.constellation[0]}{sat.prn}
+                    </td>
+                    <td className="text-right py-0.5 pr-2 text-gray-700 dark:text-gray-300">
+                      {sat.elevation}°
+                    </td>
+                    <td className="text-right py-0.5 pr-2 text-gray-700 dark:text-gray-300">
+                      {sat.azimuth}°
+                    </td>
+                    <td className="text-right py-0.5 pr-2 text-gray-700 dark:text-gray-300">
+                      {sat.snr !== null ? sat.snr : "—"}
+                    </td>
+                    <td className="text-center py-0.5">
+                      {sat.used ? (
+                        <span className="text-green-600 dark:text-green-400">✓</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Vertical bar chart showing SNR per satellite, colour-coded by constellation. */
+function SkyplotSnrBars({ satellites }: { satellites: SatelliteInfo[] }) {
+  const tracked = satellites.filter((s) => s.snr !== null);
+  if (tracked.length === 0) {
+    return (
+      <p className="text-xs text-gray-400">SNRデータがありません。</p>
+    );
+  }
+  const maxSnr = Math.max(...tracked.map((s) => s.snr as number), 50);
+  const barW   = 14;
+  const gap    = 3;
+  const chartH = 80;
+  const totalW = tracked.length * (barW + gap) - gap;
+
+  return (
+    <svg
+      viewBox={`0 0 ${Math.max(totalW, 200)} ${chartH + 20}`}
+      className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+      aria-label="SNR bar chart"
+    >
+      {/* Reference lines at 30 and 50 dBHz */}
+      {[30, 50].map((ref) => {
+        const y = chartH - (ref / maxSnr) * chartH;
+        return (
+          <g key={ref}>
+            <line
+              x1={0} y1={y}
+              x2={Math.max(totalW, 200)} y2={y}
+              stroke="#d1d5db"
+              strokeWidth="0.5"
+              strokeDasharray="3,3"
+            />
+            <text x={2} y={y - 1} fontSize="7" fill="#9ca3af" fontFamily="sans-serif">
+              {ref}
+            </text>
+          </g>
+        );
+      })}
+
+      {tracked.map((sat, i) => {
+        const x   = i * (barW + gap);
+        const snr = sat.snr as number;
+        const bh  = (snr / maxSnr) * chartH;
+        const y   = chartH - bh;
+        const color = CONSTELLATION_COLORS[sat.constellation];
+        return (
+          <g key={`${sat.constellation}:${sat.prn}`}>
+            <title>{`${sat.constellation} PRN${sat.prn}: ${snr} dBHz${sat.used ? " (使用中)" : ""}`}</title>
+            <rect
+              x={x}
+              y={y}
+              width={barW}
+              height={bh}
+              fill={sat.used ? color : "none"}
+              stroke={color}
+              strokeWidth={1}
+              rx={1}
+            />
+            {/* SNR value above bar */}
+            <text
+              x={x + barW / 2}
+              y={y - 1}
+              textAnchor="middle"
+              fontSize="6"
+              fill={color}
+              fontFamily="sans-serif"
+            >
+              {snr}
+            </text>
+            {/* PRN label below */}
+            <text
+              x={x + barW / 2}
+              y={chartH + 10}
+              textAnchor="middle"
+              fontSize="7"
+              fill={color}
+              fontFamily="sans-serif"
+              fontWeight={sat.used ? "bold" : "normal"}
+            >
+              {sat.prn}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
