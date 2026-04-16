@@ -60,6 +60,16 @@ function calcBearing(aLat: number, aLng: number, bLat: number, bLng: number): nu
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+/** Build a Leaflet divIcon with a circle for the seek position marker. */
+function buildCircleIcon(): L.DivIcon {
+  return L.divIcon({
+    html: `<div style="background:#f97316;width:18px;height:18px;border-radius:50%;border:2.5px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    className: "",
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
 /** Build a Leaflet divIcon with an arrow SVG rotated to bearingDeg (0 = north). */
 function buildArrowIcon(bearingDeg: number): L.DivIcon {
   const safeDeg = Number.isFinite(bearingDeg) ? bearingDeg % 360 : 0;
@@ -92,7 +102,8 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
-  const seekMarkerRef = useRef<L.CircleMarker | L.Marker | null>(null);
+  const seekMarkerRef = useRef<L.Marker | null>(null);
+  const seekMarkerTypeRef = useRef<MarkerType | null>(null);
 
   // Initialize map once
   useEffect(() => {
@@ -124,6 +135,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       if (seekMarkerRef.current) {
         seekMarkerRef.current.remove();
         seekMarkerRef.current = null;
+        seekMarkerTypeRef.current = null;
       }
       map.remove();
       mapRef.current = null;
@@ -238,6 +250,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       if (seekMarkerRef.current) {
         seekMarkerRef.current.remove();
         seekMarkerRef.current = null;
+        seekMarkerTypeRef.current = null;
       }
       return;
     }
@@ -259,7 +272,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const arrowDeg = headingUp ? 0 : bearing;
 
     if (markerType === "arrow") {
-      if (seekMarkerRef.current instanceof L.Marker) {
+      if (seekMarkerRef.current && seekMarkerTypeRef.current === "arrow") {
         seekMarkerRef.current.setLatLng(latlng);
         seekMarkerRef.current.setIcon(buildArrowIcon(arrowDeg));
         seekMarkerRef.current.setTooltipContent(content);
@@ -276,9 +289,10 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
         })
           .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -16] })
           .addTo(map);
+        seekMarkerTypeRef.current = "arrow";
       }
     } else {
-      if (seekMarkerRef.current instanceof L.CircleMarker) {
+      if (seekMarkerRef.current && seekMarkerTypeRef.current === "circle") {
         seekMarkerRef.current.setLatLng(latlng);
         seekMarkerRef.current.setTooltipContent(content);
       } else {
@@ -287,17 +301,14 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
           seekMarkerRef.current.remove();
           seekMarkerRef.current = null;
         }
-        seekMarkerRef.current = L.circleMarker(latlng, {
-          radius: 9,
-          fillColor: "#f97316",
-          fillOpacity: 0.95,
-          color: "#fff",
-          weight: 2.5,
+        seekMarkerRef.current = L.marker(latlng, {
+          icon: buildCircleIcon(),
           interactive: false,
           pane: "seekMarkerPane",
         })
-          .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -12] })
+          .bindTooltip(content, { permanent: true, direction: "top", offset: [0, -16] })
           .addTo(map);
+        seekMarkerTypeRef.current = "circle";
       }
     }
   }, [seekPoint, seekIndex, markerType, points, centerOnMarker, headingUp]);
