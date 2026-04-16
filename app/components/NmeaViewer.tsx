@@ -428,7 +428,7 @@ export default function NmeaViewer() {
 
       {/* Global Seekbar */}
       {points.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center gap-2 select-none">
+        <div className={`absolute bottom-0 right-0 z-[1000] bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center gap-2 select-none${isPanelOpen ? " left-80" : " left-0"}`}>
           {/* Play / Pause */}
           <button
             onClick={handlePlayPause}
