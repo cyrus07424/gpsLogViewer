@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useMemo } from "react";
+import { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats, type SatelliteInfo, type Constellation } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
@@ -69,6 +69,12 @@ export default function NmeaViewer() {
   const [rawSentences, setRawSentences] = useState<string[]>([]);
   const [lastSatellites, setLastSatellites] = useState<SatelliteInfo[]>([]);
   const [colorBySpeed, setColorBySpeed] = useState(false);
+  const [satelliteHistory, setSatelliteHistory] = useState<SatelliteInfo[][]>([]);
+  const [seekIndex, setSeekIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeed, setPlaySpeed] = useState(10);
+  const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback((file: File) => {
@@ -89,6 +95,9 @@ export default function NmeaViewer() {
         setErrors(result.errors);
         setRawSentences([]);
         setLastSatellites([]);
+        setSatelliteHistory([]);
+        setSeekIndex(0);
+        setIsPlaying(false);
         setIsLoading(false);
         if (result.points.length > 0) {
           setIsPanelOpen(true);
@@ -113,6 +122,7 @@ export default function NmeaViewer() {
       let errs: string[] = [];
       let raw: string[] = [];
       let sats: SatelliteInfo[] = [];
+      let satHistory: SatelliteInfo[][] = [];
 
       if (fmt === "gpx") {
         const result = parseGpx(content);
@@ -129,6 +139,7 @@ export default function NmeaViewer() {
         errs = result.errors;
         raw = result.rawSentences;
         sats = result.lastSatellites;
+        satHistory = result.satelliteHistory;
       }
 
       const filledPts = fillMissingSpeed(pts);
@@ -137,6 +148,9 @@ export default function NmeaViewer() {
       setErrors(errs);
       setRawSentences(raw);
       setLastSatellites(sats);
+      setSatelliteHistory(satHistory);
+      setSeekIndex(0);
+      setIsPlaying(false);
       setIsLoading(false);
       if (pts.length > 0) {
         setIsPanelOpen(true);
@@ -185,13 +199,78 @@ export default function NmeaViewer() {
     setErrors([]);
     setRawSentences([]);
     setLastSatellites([]);
+    setSatelliteHistory([]);
+    setSeekIndex(0);
+    setIsPlaying(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+  const handlePlayPause = useCallback(() => {
+    if (points.length === 0) return;
+    if (!isPlaying && seekIndex >= points.length - 1) {
+      setSeekIndex(0);
+    }
+    setIsPlaying((v) => !v);
+  }, [isPlaying, seekIndex, points.length]);
+
+  // Play timer — advances seekIndex based on timestamps (or fixed rate)
+  useEffect(() => {
+    if (!isPlaying || points.length === 0) {
+      if (playTimerRef.current) {
+        clearTimeout(playTimerRef.current);
+        playTimerRef.current = null;
+      }
+      return;
+    }
+
+    playIndexRef.current = seekIndex;
+
+    const tick = () => {
+      const currentIdx = playIndexRef.current;
+      if (currentIdx >= points.length - 1) {
+        setIsPlaying(false);
+        return;
+      }
+      const nextIdx = currentIdx + 1;
+      playIndexRef.current = nextIdx;
+      setSeekIndex(nextIdx);
+
+      const curr = points[currentIdx];
+      const next = points[nextIdx];
+      let delay = 500 / playSpeed;
+      if (curr.timestamp && next.timestamp) {
+        const diff = next.timestamp.getTime() - curr.timestamp.getTime();
+        delay = Math.max(16, diff / playSpeed);
+      }
+      playTimerRef.current = setTimeout(tick, delay);
+    };
+
+    const curr = points[playIndexRef.current];
+    const next = points[Math.min(playIndexRef.current + 1, points.length - 1)];
+    let initialDelay = 500 / playSpeed;
+    if (curr?.timestamp && next?.timestamp) {
+      const diff = next.timestamp.getTime() - curr.timestamp.getTime();
+      initialDelay = Math.max(16, diff / playSpeed);
+    }
+    playTimerRef.current = setTimeout(tick, initialDelay);
+
+    return () => {
+      if (playTimerRef.current) {
+        clearTimeout(playTimerRef.current);
+        playTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, playSpeed, points]);
+
   return (
-    <div className="relative w-full h-screen overflow-hidden">
+    <div className={`relative w-full h-screen overflow-hidden${points.length > 0 ? " seekbar-visible" : ""}`}>
       {/* Full-screen map */}
-      <MapView points={points} colorBySpeed={colorBySpeed} />
+      <MapView
+        points={points}
+        colorBySpeed={colorBySpeed}
+        seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
+      />
 
       {/* Top-right controls */}
       <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
@@ -326,7 +405,12 @@ export default function NmeaViewer() {
                   <ChartPanel points={points} />
                 )}
                 {activeTab === "satellite" && (
-                  <SatellitePanel satellites={lastSatellites} fileFormat={fileFormat} />
+                  <SatellitePanel
+                    satellites={lastSatellites}
+                    fileFormat={fileFormat}
+                    seekIndex={seekIndex}
+                    satelliteHistory={satelliteHistory}
+                  />
                 )}
                 {activeTab === "raw" && (
                   <RawPanel sentences={rawSentences} fileFormat={fileFormat} />
@@ -338,6 +422,59 @@ export default function NmeaViewer() {
           {/* Footer */}
           <div className="p-2 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-400 flex-shrink-0">
             © 2026 <a href="https://github.com/cyrus07424" target="_blank" className="underline">cyrus</a>
+          </div>
+        </div>
+      )}
+
+      {/* Global Seekbar */}
+      {points.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center gap-2 select-none">
+          {/* Play / Pause */}
+          <button
+            onClick={handlePlayPause}
+            className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow text-sm"
+            title={isPlaying ? "一時停止" : "再生"}
+            aria-label={isPlaying ? "一時停止" : "再生"}
+          >
+            {isPlaying ? "⏸" : "▶"}
+          </button>
+
+          {/* Speed selector */}
+          <select
+            value={playSpeed}
+            onChange={(e) => setPlaySpeed(Number(e.target.value))}
+            className="flex-shrink-0 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 dark:text-gray-200"
+            title="再生速度"
+          >
+            {[1, 2, 5, 10, 30, 60].map((s) => (
+              <option key={s} value={s}>{s}x</option>
+            ))}
+          </select>
+
+          {/* Seekbar slider */}
+          <input
+            type="range"
+            min={0}
+            max={points.length - 1}
+            value={seekIndex}
+            onChange={(e) => {
+              setSeekIndex(Number(e.target.value));
+              setIsPlaying(false);
+            }}
+            className="flex-1 h-2 accent-blue-600 cursor-pointer"
+            aria-label="再生位置"
+          />
+
+          {/* Position info */}
+          <div className="flex-shrink-0 text-right leading-tight min-w-[90px]">
+            <div className="text-xs font-medium text-gray-700 dark:text-gray-200">
+              {seekIndex + 1} / {points.length}
+            </div>
+            {points[seekIndex]?.timestamp ? (
+              <div className="text-[10px] text-gray-400">
+                {points[seekIndex].timestamp!.toLocaleTimeString()}
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -866,10 +1003,23 @@ const CONSTELLATION_COLORS: Record<Constellation, string> = {
 function SatellitePanel({
   satellites,
   fileFormat,
+  seekIndex,
+  satelliteHistory,
 }: {
   satellites: SatelliteInfo[];
   fileFormat: FileFormat;
+  seekIndex: number;
+  satelliteHistory: SatelliteInfo[][];
 }) {
+  // Pick the most recent non-empty snapshot at or before seekIndex
+  const displaySatellites = useMemo(() => {
+    if (satelliteHistory.length === 0) return satellites;
+    for (let i = seekIndex; i >= 0; i--) {
+      if (satelliteHistory[i]?.length > 0) return satelliteHistory[i];
+    }
+    return satellites;
+  }, [seekIndex, satelliteHistory, satellites]);
+
   if (fileFormat !== "nmea") {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
@@ -877,7 +1027,7 @@ function SatellitePanel({
       </div>
     );
   }
-  if (satellites.length === 0) {
+  if (displaySatellites.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
         衛星データがありません (GSVセンテンスが含まれていないか確認してください)。
@@ -909,11 +1059,11 @@ function SatellitePanel({
       {/* Legend */}
       <div>
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-          衛星 ({satellites.length} 機) — スカイプロット
+          衛星 ({displaySatellites.length} 機) — スカイプロット
         </p>
         <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
           {(Object.entries(CONSTELLATION_COLORS) as [Constellation, string][])
-            .filter(([c]) => satellites.some((s) => s.constellation === c))
+            .filter(([c]) => displaySatellites.some((s) => s.constellation === c))
             .map(([c, color]) => (
               <span key={c} className="text-xs flex items-center gap-1">
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -961,7 +1111,7 @@ function SatellitePanel({
           <text x={CX + 2} y={CY - R * (1 - 60 / 90) - 2} fontSize="7" fill="#9ca3af" fontFamily="sans-serif">60°</text>
 
           {/* Satellites */}
-          {satellites.map((sat) => {
+          {displaySatellites.map((sat) => {
             const { x, y } = toSkyXY(sat.elevation, sat.azimuth);
             const color = CONSTELLATION_COLORS[sat.constellation];
             const r = 6;
@@ -1000,7 +1150,7 @@ function SatellitePanel({
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
           SNR (信号強度) — dBHz
         </p>
-        <SkyplotSnrBars satellites={satellites} />
+        <SkyplotSnrBars satellites={displaySatellites} />
       </div>
 
       {/* ── Satellite Table ── */}
@@ -1020,7 +1170,7 @@ function SatellitePanel({
               </tr>
             </thead>
             <tbody>
-              {satellites.map((sat) => {
+              {displaySatellites.map((sat) => {
                 const color = CONSTELLATION_COLORS[sat.constellation];
                 return (
                   <tr

@@ -41,6 +41,11 @@ export interface ParsedNmea {
   errors: string[];
   /** Most recent complete set of visible satellites, keyed as they appeared in the last GSV group. */
   lastSatellites: SatelliteInfo[];
+  /**
+   * Satellite snapshot parallel to points[].
+   * satelliteHistory[i] is the satellite state captured at the moment points[i] was recorded.
+   */
+  satelliteHistory: SatelliteInfo[][];
 }
 
 function parseLatLng(
@@ -147,6 +152,7 @@ export function parseNmea(content: string): ParsedNmea {
   const points: GpsPoint[] = [];
   const rawSentences: string[] = [];
   const errors: string[] = [];
+  const satelliteHistory: SatelliteInfo[][] = [];
 
   // Temporary storage to correlate GGA altitude/quality with RMC speed.
   // Keyed by normalised time (HHMMSS) so precision differences don't break matching.
@@ -241,6 +247,11 @@ export function parseNmea(content: string): ParsedNmea {
           satellites: gga?.satellites,
         };
         points.push(point);
+        satelliteHistory.push(
+          Array.from(satelliteMap.values()).sort(
+            (a, b) => a.constellation.localeCompare(b.constellation) || a.prn - b.prn
+          )
+        );
       } else if (type.length >= 6 && type.endsWith("GSA")) {
         // $GPGSA,A,fixType,prn1,..,prn12,PDOP,HDOP,VDOP
         // parts[3..14] are satellite PRNs used in the fix (may be empty).
@@ -339,6 +350,11 @@ export function parseNmea(content: string): ParsedNmea {
               satellites: isNaN(satellites) ? undefined : satellites,
               timestamp,
             });
+            satelliteHistory.push(
+              Array.from(satelliteMap.values()).sort(
+                (a, b) => a.constellation.localeCompare(b.constellation) || a.prn - b.prn
+              )
+            );
           }
         }
       }
@@ -350,7 +366,7 @@ export function parseNmea(content: string): ParsedNmea {
     (a, b) => a.constellation.localeCompare(b.constellation) || a.prn - b.prn
   );
 
-  return { points, rawSentences, errors, lastSatellites };
+  return { points, rawSentences, errors, lastSatellites, satelliteHistory };
 }
 
 export interface TrackStats {

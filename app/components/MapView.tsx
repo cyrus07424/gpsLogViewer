@@ -13,9 +13,23 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+function buildTooltipContent(p: GpsPoint, label?: string): string {
+  return [
+    label ? `<b>${label}</b>` : "",
+    p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
+    p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
+    p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
+    p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
+    p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
+  ]
+    .filter(Boolean)
+    .join("<br>");
+}
+
 interface MapViewProps {
   points: GpsPoint[];
   colorBySpeed: boolean;
+  seekPoint?: GpsPoint | null;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -27,10 +41,11 @@ function speedColor(speed?: number, maxSpeed?: number): string {
   return `rgb(${r},${g},0)`;
 }
 
-export default function MapView({ points, colorBySpeed }: MapViewProps) {
+export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
+  const seekMarkerRef = useRef<L.CircleMarker | null>(null);
 
   // Initialize map once
   useEffect(() => {
@@ -53,6 +68,10 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
     mapRef.current = map;
 
     return () => {
+      if (seekMarkerRef.current) {
+        seekMarkerRef.current.remove();
+        seekMarkerRef.current = null;
+      }
       map.remove();
       mapRef.current = null;
     };
@@ -73,18 +92,6 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
       : undefined;
 
     const latLngs = points.map((p) => [p.lat, p.lng] as [number, number]);
-
-    const buildTooltipContent = (p: GpsPoint, label?: string): string =>
-      [
-        label ? `<b>${label}</b>` : "",
-        p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
-        p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
-        p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
-        p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
-        p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
-      ]
-        .filter(Boolean)
-        .join("<br>");
 
     // Helper: find the nearest GPS point to a given latlng
     const findNearest = (latlng: L.LatLng): GpsPoint => {
@@ -168,6 +175,39 @@ export default function MapView({ points, colorBySpeed }: MapViewProps) {
     const bounds = L.latLngBounds(latLngs);
     map.fitBounds(bounds, { padding: [40, 40] });
   }, [points, colorBySpeed]);
+
+  // Update seek position marker
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!seekPoint) {
+      if (seekMarkerRef.current) {
+        seekMarkerRef.current.remove();
+        seekMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const latlng: [number, number] = [seekPoint.lat, seekPoint.lng];
+    const content = buildTooltipContent(seekPoint) || `${seekPoint.lat.toFixed(5)}, ${seekPoint.lng.toFixed(5)}`;
+
+    if (seekMarkerRef.current) {
+      seekMarkerRef.current.setLatLng(latlng);
+      seekMarkerRef.current.setTooltipContent(content);
+    } else {
+      seekMarkerRef.current = L.circleMarker(latlng, {
+        radius: 9,
+        fillColor: "#f97316",
+        fillOpacity: 0.95,
+        color: "#fff",
+        weight: 2.5,
+        interactive: false,
+      })
+        .bindTooltip(content, { permanent: false, direction: "top", offset: [0, -12] })
+        .addTo(map);
+    }
+  }, [seekPoint]);
 
   return (
     <div
