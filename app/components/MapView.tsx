@@ -60,7 +60,11 @@ function calcBearing(aLat: number, aLng: number, bLat: number, bLng: number): nu
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-/** Build a Leaflet divIcon with a circle for the seek position marker. */
+/** Build a Leaflet divIcon with a CSS circle for the seek position marker.
+ * Uses a divIcon instead of L.circleMarker so that the marker is placed as a
+ * plain DOM element in the custom pane, avoiding SVG renderer pane incompatibilities
+ * with leaflet-rotate.
+ */
 function buildCircleIcon(): L.DivIcon {
   return L.divIcon({
     html: `<div style="background:#f97316;width:18px;height:18px;border-radius:50%;border:2.5px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
