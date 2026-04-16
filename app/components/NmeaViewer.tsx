@@ -472,7 +472,7 @@ export default function NmeaViewer() {
             </div>
             {points[seekIndex]?.timestamp ? (
               <div className="text-[10px] text-gray-400">
-                {points[seekIndex].timestamp!.toLocaleTimeString()}
+                {points[seekIndex].timestamp.toLocaleTimeString()}
               </div>
             ) : null}
           </div>

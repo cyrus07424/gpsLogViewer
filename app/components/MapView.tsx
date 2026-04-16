@@ -17,6 +17,7 @@ function buildTooltipContent(p: GpsPoint, label?: string): string {
   return [
     label ? `<b>${label}</b>` : "",
     p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
+    `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
     p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
     p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
     p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
@@ -190,7 +191,7 @@ export default function MapView({ points, colorBySpeed, seekPoint }: MapViewProp
     }
 
     const latlng: [number, number] = [seekPoint.lat, seekPoint.lng];
-    const content = buildTooltipContent(seekPoint) || `${seekPoint.lat.toFixed(5)}, ${seekPoint.lng.toFixed(5)}`;
+    const content = buildTooltipContent(seekPoint);
 
     if (seekMarkerRef.current) {
       seekMarkerRef.current.setLatLng(latlng);
