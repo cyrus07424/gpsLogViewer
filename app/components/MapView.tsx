@@ -137,6 +137,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       zoomControl: false,
       rotate: true,
       bearing: 0,
+      rotateControl: { position: "topright" },
     });
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
