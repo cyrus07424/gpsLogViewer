@@ -151,11 +151,36 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     map.createPane("seekMarkerPane");
     (map.getPane("seekMarkerPane") as HTMLElement).style.zIndex = "650";
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-    }).addTo(map);
+    // Offer multiple base map choices instead of a fixed single tile layer.
+    const baseLayers: Record<string, L.TileLayer> = {
+      OpenStreetMap: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }),
+      "OpenStreetMap HOT": L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by Humanitarian OpenStreetMap Team hosted by OpenStreetMap France',
+        maxZoom: 19,
+      }),
+      OpenTopoMap: L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+        attribution:
+          'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+        maxZoom: 17,
+      }),
+      Satellite: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        attribution: "Tiles &copy; Esri",
+        maxZoom: 19,
+      }),
+    };
+
+    baseLayers.OpenStreetMap.addTo(map);
+    // Place in top-right and push it below the sidebar toggle button area.
+    const layersControl = L.control.layers(baseLayers, {}, { position: "topright", collapsed: true }).addTo(map);
+    const layersControlEl = layersControl.getContainer();
+    if (layersControlEl) {
+      layersControlEl.style.marginTop = "72px";
+    }
 
     trackLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
