@@ -4,9 +4,10 @@ declare module "leaflet" {
   interface MapOptions {
     rotate?: boolean;
     bearing?: number;
-    rotateControl?: boolean | { position?: ControlPosition };
+    rotateControl?: boolean | { position?: ControlPosition; closeOnZeroBearing?: boolean };
   }
   interface Map {
+    rotateControl?: Control;
     setBearing(deg: number): this;
     getBearing(): number;
   }

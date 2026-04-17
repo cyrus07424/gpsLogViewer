@@ -137,9 +137,15 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       zoomControl: false,
       rotate: true,
       bearing: 0,
-      rotateControl: { position: "topright" },
+      rotateControl: { position: "bottomright", closeOnZeroBearing: false },
     });
     L.control.zoom({ position: "bottomright" }).addTo(map);
+
+    // Re-add rotate control after zoom so compass stays stacked above zoom in bottomright.
+    if (map.rotateControl) {
+      map.removeControl(map.rotateControl);
+      map.addControl(map.rotateControl);
+    }
 
     // Custom pane for the seek marker so it always renders above track polylines
     map.createPane("seekMarkerPane");
