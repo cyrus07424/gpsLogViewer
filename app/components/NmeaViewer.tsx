@@ -491,9 +491,9 @@ export default function NmeaViewer() {
               <input
                 type="range"
                 min={1}
-                max={100}
+                max={1000}
                 step={1}
-                value={Math.min(playSpeed, 100)}
+                value={Math.min(playSpeed, 1000)}
                 onChange={(e) => setPlaySpeed(Number(e.target.value))}
                 style={verticalSliderStyle}
                 className="w-4 accent-blue-600 cursor-pointer"
@@ -509,10 +509,10 @@ export default function NmeaViewer() {
               className="text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 dark:text-gray-200"
               title={t.speedPresetTitle}
             >
-              {![1, 2, 5, 10, 30, 60].includes(playSpeed) && (
+              {![1, 2, 5, 10, 30, 60, 100, 300, 1000].includes(playSpeed) && (
                 <option value={playSpeed}>{playSpeed}x</option>
               )}
-              {[1, 2, 5, 10, 30, 60].map((s) => (
+              {[1, 2, 5, 10, 30, 60, 100, 300, 1000].map((s) => (
                 <option key={s} value={s}>{s}x</option>
               ))}
             </select>
