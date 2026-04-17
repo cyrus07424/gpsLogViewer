@@ -8,7 +8,7 @@ import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
 import { exportToKml } from "../lib/kmlExporter";
 import { type MarkerType, type MapLabels } from "./MapView";
-import { useTranslations } from "../lib/i18n";
+import { useTranslations, type Translations } from "../lib/i18n";
 
 type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
 
@@ -588,8 +588,6 @@ export default function NmeaViewer() {
     </div>
   );
 }
-
-import { type Translations } from "../lib/i18n";
 
 function StatsPanel({
   stats,
