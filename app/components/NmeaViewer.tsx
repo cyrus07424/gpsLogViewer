@@ -7,7 +7,8 @@ import { parseGpx } from "../lib/gpxParser";
 import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
 import { exportToKml } from "../lib/kmlExporter";
-import { type MarkerType } from "./MapView";
+import { type MarkerType, type MapLabels } from "./MapView";
+import { useTranslations } from "../lib/i18n";
 
 type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
 
@@ -64,6 +65,7 @@ const verticalSliderStyle: React.CSSProperties = {
 };
 
 export default function NmeaViewer() {
+  const { t, language, setLanguage } = useTranslations();
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [stats, setStats] = useState<TrackStats | null>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -115,7 +117,7 @@ export default function NmeaViewer() {
         }
       };
       reader.onerror = () => {
-        setErrors(["ファイルの読み込みに失敗しました。"]);
+        setErrors([t.fileReadError]);
         setIsLoading(false);
       };
       reader.readAsArrayBuffer(file);
@@ -168,11 +170,11 @@ export default function NmeaViewer() {
       }
     };
     reader.onerror = () => {
-      setErrors(["ファイルの読み込みに失敗しました。"]);
+      setErrors([t.fileReadError]);
       setIsLoading(false);
     };
     reader.readAsText(file, "utf-8");
-  }, []);
+  }, [t]);
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -284,6 +286,13 @@ export default function NmeaViewer() {
         markerType={markerType}
         centerOnMarker={centerOnMarker}
         headingUp={headingUp}
+        mapLabels={{
+          speed: t.mapSpeed,
+          altitude: t.mapAltitude,
+          satellites: t.mapSatellites,
+          startMarker: t.mapStartMarker,
+          endMarker: t.mapEndMarker,
+        }}
       />
 
       {/* Top-right controls */}
@@ -291,7 +300,7 @@ export default function NmeaViewer() {
         <button
           onClick={() => setIsPanelOpen((v) => !v)}
           className="bg-white dark:bg-gray-800 shadow-md rounded-full w-10 h-10 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title={isPanelOpen ? "パネルを閉じる" : "パネルを開く"}
+          title={isPanelOpen ? t.closePanel : t.openPanel}
         >
           {isPanelOpen ? "✕" : "☰"}
         </button>
@@ -301,9 +310,18 @@ export default function NmeaViewer() {
       {isPanelOpen && (
         <div className="absolute top-0 left-0 bottom-0 z-[999] w-80 bg-white dark:bg-gray-900 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="bg-blue-600 text-white px-4 py-3 flex-shrink-0">
-            <h1 className="text-lg font-bold">🗺 GPS Log Viewer</h1>
-            <p className="text-xs text-blue-200">GPS履歴マップ表示・分析ツール</p>
+          <div className="bg-blue-600 text-white px-4 py-3 flex-shrink-0 flex items-start justify-between">
+            <div>
+              <h1 className="text-lg font-bold">🗺 GPS Log Viewer</h1>
+              <p className="text-xs text-blue-200">{t.appSubtitle}</p>
+            </div>
+            <button
+              onClick={() => setLanguage(language === "ja" ? "en" : "ja")}
+              className="mt-0.5 text-xs bg-white/20 hover:bg-white/30 text-white rounded px-2 py-1 flex-shrink-0 transition-colors"
+              title={t.languageToggle}
+            >
+              {t.languageToggle}
+            </button>
           </div>
 
           {/* File upload area */}
@@ -327,19 +345,19 @@ export default function NmeaViewer() {
                 className="hidden"
               />
               {isLoading ? (
-                <p className="text-sm text-blue-600 dark:text-blue-400">読み込み中…</p>
+                <p className="text-sm text-blue-600 dark:text-blue-400">{t.loading}</p>
               ) : fileName ? (
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 truncate">📄 {fileName}</p>
-                  <p className="text-xs text-blue-500 mt-1">別のファイルを選択</p>
+                  <p className="text-xs text-blue-500 mt-1">{t.selectAnotherFile}</p>
                 </div>
               ) : (
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    📂 GPSログファイルをここにドロップ
+                    {t.dropFileHere}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">またはクリックして選択</p>
-                  <p className="text-xs text-gray-400">(.nmea / .gpx / .kml / .kmz / .txt / .log)</p>
+                  <p className="text-xs text-gray-400 mt-1">{t.orClickToSelect}</p>
+                  <p className="text-xs text-gray-400">{t.supportedFormats}</p>
                 </div>
               )}
             </div>
@@ -350,7 +368,7 @@ export default function NmeaViewer() {
                     onClick={handleClear}
                     className="flex-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
                   >
-                    クリア
+                    {t.clearButton}
                   </button>
                 </div>
                 {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz") && (
@@ -360,7 +378,7 @@ export default function NmeaViewer() {
                         onClick={() => exportToGpx(points, fileName.replace(/\.[^.]+$/, "") + ".gpx")}
                         className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 rounded px-2 py-1"
                       >
-                        ⬇ GPXに変換
+                        {t.exportToGpx}
                       </button>
                     )}
                     {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz") && (
@@ -368,7 +386,7 @@ export default function NmeaViewer() {
                         onClick={() => exportToKml(points, fileName.replace(/\.[^.]+$/, "") + ".kml")}
                         className="flex-1 text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 font-medium border border-green-300 dark:border-green-700 rounded px-2 py-1"
                       >
-                        ⬇ KMLに変換
+                        {t.exportToKml}
                       </button>
                     )}
                   </div>
@@ -381,14 +399,14 @@ export default function NmeaViewer() {
           {errors.length > 0 && (
             <div className="mx-3 my-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded text-xs text-yellow-800 dark:text-yellow-300 flex-shrink-0 max-h-20 overflow-y-auto">
               ⚠ {errors.slice(0, 5).join(" | ")}
-              {errors.length > 5 && ` … 他 ${errors.length - 5} 件`}
+              {errors.length > 5 && ` … ${t.errorsMore(errors.length - 5)}`}
             </div>
           )}
 
           {/* No points warning */}
           {!isLoading && fileName && points.length === 0 && errors.length === 0 && (
             <div className="mx-3 my-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded text-xs text-red-700 dark:text-red-300 flex-shrink-0">
-              GPS座標が見つかりませんでした。
+              {t.noGpsCoordinates}
             </div>
           )}
 
@@ -406,17 +424,17 @@ export default function NmeaViewer() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
-                    {tab === "stats" ? "統計" : tab === "chart" ? "グラフ" : tab === "satellite" ? "衛星" : "RAW"}
+                    {tab === "stats" ? t.tabStats : tab === "chart" ? t.tabChart : tab === "satellite" ? t.tabSatellite : t.tabRaw}
                   </button>
                 ))}
               </div>
 
               <div className="flex-1 overflow-y-auto">
                 {activeTab === "stats" && stats && (
-                  <StatsPanel stats={stats} points={points} colorBySpeed={colorBySpeed} setColorBySpeed={setColorBySpeed} />
+                  <StatsPanel stats={stats} points={points} colorBySpeed={colorBySpeed} setColorBySpeed={setColorBySpeed} t={t} />
                 )}
                 {activeTab === "chart" && (
-                  <ChartPanel points={points} seekIndex={seekIndex} />
+                  <ChartPanel points={points} seekIndex={seekIndex} t={t} />
                 )}
                 {activeTab === "satellite" && (
                   <SatellitePanel
@@ -424,10 +442,11 @@ export default function NmeaViewer() {
                     fileFormat={fileFormat}
                     seekIndex={seekIndex}
                     satelliteHistory={satelliteHistory}
+                    t={t}
                   />
                 )}
                 {activeTab === "raw" && (
-                  <RawPanel sentences={rawSentences} fileFormat={fileFormat} />
+                  <RawPanel sentences={rawSentences} fileFormat={fileFormat} t={t} />
                 )}
               </div>
             </>
@@ -447,8 +466,8 @@ export default function NmeaViewer() {
           <button
             onClick={handlePlayPause}
             className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow text-sm"
-            title={isPlaying ? "一時停止" : "再生"}
-            aria-label={isPlaying ? "一時停止" : "再生"}
+            title={isPlaying ? t.pause : t.play}
+            aria-label={isPlaying ? t.pause : t.play}
           >
             {isPlaying ? "⏸" : "▶"}
           </button>
@@ -478,7 +497,7 @@ export default function NmeaViewer() {
                 onChange={(e) => setPlaySpeed(Number(e.target.value))}
                 style={verticalSliderStyle}
                 className="w-4 accent-blue-600 cursor-pointer"
-                aria-label="再生速度スライダー"
+                aria-label={t.speedSliderLabel}
               />
               <span className="text-[10px] text-gray-400">1x</span>
             </div>
@@ -488,7 +507,7 @@ export default function NmeaViewer() {
               value={playSpeed}
               onChange={(e) => setPlaySpeed(Number(e.target.value))}
               className="text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 dark:text-gray-200"
-              title="再生速度プリセット（ホバーで無段階調整）"
+              title={t.speedPresetTitle}
             >
               {![1, 2, 5, 10, 30, 60].includes(playSpeed) && (
                 <option value={playSpeed}>{playSpeed}x</option>
@@ -503,8 +522,8 @@ export default function NmeaViewer() {
           <button
             onClick={() => setMarkerType((v) => v === "circle" ? "arrow" : "circle")}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-sm text-base hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
-            aria-label={markerType === "circle" ? "矢印マーカーに切り替え" : "丸マーカーに切り替え"}
+            title={markerType === "circle" ? t.switchToArrow : t.switchToCircle}
+            aria-label={markerType === "circle" ? t.switchToArrow : t.switchToCircle}
           >
             {markerType === "circle" ? "⬤" : "▲"}
           </button>
@@ -517,8 +536,8 @@ export default function NmeaViewer() {
                 ? "bg-blue-600 hover:bg-blue-700 text-white border border-blue-600"
                 : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
             }`}
-            title={centerOnMarker ? "マーカー中央固定: ON（クリックでOFF）" : "マーカー中央固定: OFF（クリックでON）"}
-            aria-label={centerOnMarker ? "マーカー中央固定をオフにする" : "マーカー中央固定をオンにする"}
+            title={centerOnMarker ? t.centerOnMarkerOnTitle : t.centerOnMarkerOffTitle}
+            aria-label={centerOnMarker ? t.centerOnMarkerOnLabel : t.centerOnMarkerOffLabel}
             aria-pressed={centerOnMarker}
           >
             ⊕
@@ -532,8 +551,8 @@ export default function NmeaViewer() {
                 ? "bg-blue-600 hover:bg-blue-700 text-white border border-blue-600"
                 : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
             }`}
-            title={headingUp ? "ヘディングアップ: ON（クリックでノースアップへ）" : "ノースアップ: ON（クリックでヘディングアップへ）"}
-            aria-label={headingUp ? "ノースアップに切り替え" : "ヘディングアップに切り替え"}
+            title={headingUp ? t.headingUpOnTitle : t.headingUpOffTitle}
+            aria-label={headingUp ? t.headingUpOnLabel : t.headingUpOffLabel}
             aria-pressed={headingUp}
           >
             🧭
@@ -550,7 +569,7 @@ export default function NmeaViewer() {
               setIsPlaying(false);
             }}
             className="flex-1 h-2 accent-blue-600 cursor-pointer"
-            aria-label="再生位置"
+            aria-label={t.playbackPositionLabel}
           />
 
           {/* Position info */}
@@ -570,16 +589,20 @@ export default function NmeaViewer() {
   );
 }
 
+import { type Translations } from "../lib/i18n";
+
 function StatsPanel({
   stats,
   points,
   colorBySpeed,
   setColorBySpeed,
+  t,
 }: {
   stats: TrackStats;
   points: GpsPoint[];
   colorBySpeed: boolean;
   setColorBySpeed: (v: boolean) => void;
+  t: Translations;
 }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
@@ -587,30 +610,30 @@ function StatsPanel({
   return (
     <div className="p-3 space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <StatItem label="ポイント数" value={`${stats.pointCount.toLocaleString()} pt`} />
+        <StatItem label={t.pointCount} value={`${stats.pointCount.toLocaleString()} pt`} />
         <StatItem
-          label="総距離"
+          label={t.totalDistance}
           value={
             stats.totalDistanceKm >= 1
               ? `${stats.totalDistanceKm.toFixed(2)} km`
               : `${(stats.totalDistanceKm * 1000).toFixed(0)} m`
           }
         />
-        <StatItem label="開始時刻" value={formatDateTime(stats.startTime)} />
-        <StatItem label="終了時刻" value={formatDateTime(stats.endTime)} />
-        <StatItem label="記録時間" value={formatDuration(stats.durationSeconds)} />
+        <StatItem label={t.startTime} value={formatDateTime(stats.startTime)} />
+        <StatItem label={t.endTime} value={formatDateTime(stats.endTime)} />
+        <StatItem label={t.duration} value={formatDuration(stats.durationSeconds)} />
         {hasSpeeds && (
           <>
-            <StatItem label="最高速度" value={`${stats.maxSpeedKmh.toFixed(1)} km/h`} />
-            <StatItem label="平均速度" value={`${stats.avgSpeedKmh.toFixed(1)} km/h`} />
+            <StatItem label={t.maxSpeed} value={`${stats.maxSpeedKmh.toFixed(1)} km/h`} />
+            <StatItem label={t.avgSpeed} value={`${stats.avgSpeedKmh.toFixed(1)} km/h`} />
           </>
         )}
         {hasAlt && (
           <>
-            <StatItem label="最高高度" value={`${stats.maxAltitude.toFixed(1)} m`} />
-            <StatItem label="最低高度" value={`${stats.minAltitude.toFixed(1)} m`} />
+            <StatItem label={t.maxAltitude} value={`${stats.maxAltitude.toFixed(1)} m`} />
+            <StatItem label={t.minAltitude} value={`${stats.minAltitude.toFixed(1)} m`} />
             <StatItem
-              label="高度差"
+              label={t.altitudeDiff}
               value={`${(stats.maxAltitude - stats.minAltitude).toFixed(1)} m`}
             />
           </>
@@ -620,26 +643,26 @@ function StatsPanel({
       {/* Position accuracy statistics */}
       {stats.cep50 !== undefined && stats.drms2 !== undefined && (
         <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">測位精度統計</p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">{t.positionAccuracyTitle}</p>
           <div className="grid grid-cols-2 gap-3">
             <StatItem label="CEP 50%" value={`${stats.cep50.toFixed(2)} m`} />
             <StatItem label="2drms" value={`${stats.drms2.toFixed(2)} m`} />
             {stats.meanLat !== undefined && stats.meanLng !== undefined && (
               <>
-                <StatItem label="平均緯度" value={stats.meanLat.toFixed(6) + "°"} />
-                <StatItem label="平均経度" value={stats.meanLng.toFixed(6) + "°"} />
+                <StatItem label={t.meanLat} value={stats.meanLat.toFixed(6) + "°"} />
+                <StatItem label={t.meanLng} value={stats.meanLng.toFixed(6) + "°"} />
               </>
             )}
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            ※ CEP 50%: 全測位点の50%が収まる半径 / 2drms: 2×√(σ²E+σ²N)
+            {t.cepNote}
           </p>
         </div>
       )}
 
       {/* Display options */}
       <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">表示オプション</p>
+        <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">{t.displayOptionsTitle}</p>
         {hasSpeeds && (
           <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
             <input
@@ -648,7 +671,7 @@ function StatsPanel({
               onChange={(e) => setColorBySpeed(e.target.checked)}
               className="rounded"
             />
-            速度に応じてルートを色分け
+            {t.colorBySpeed}
           </label>
         )}
       </div>
@@ -658,7 +681,7 @@ function StatsPanel({
 
 type ChartId = "speed" | "alt" | "satellites" | "scatter" | "enu";
 
-function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: number }) {
+function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: number; t: Translations }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
   const hasSatellites = points.some((p) => p.satellites !== undefined);
@@ -691,7 +714,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
   if (!hasSpeeds && !hasAlt && !hasSatellites && enuData.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        グラフデータがありません。
+        {t.noChartData}
       </div>
     );
   }
@@ -801,7 +824,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
       {/* Speed */}
       {hasSpeeds && (
         <div>
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">速度 (km/h)</p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.speedChartTitle}</p>
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
@@ -823,7 +846,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
               const x = (i / (sampled.length - 1 || 1)) * chartWidth;
               const y = chartHeight - ((p.speed ?? 0) / (maxSpeed || 1)) * chartHeight;
               const lines = [
-                `速度: ${(p.speed ?? 0).toFixed(1)} km/h`,
+                t.speedTooltip((p.speed ?? 0).toFixed(1)),
                 ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
               ];
               return (
@@ -847,14 +870,14 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
               <circle cx={seekX} cy={seekSpeedY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
             )}
           </svg>
-          <p className="text-xs text-gray-400 text-right">最大 {maxSpeed.toFixed(1)} km/h</p>
+          <p className="text-xs text-gray-400 text-right">{t.speedMax(maxSpeed.toFixed(1))}</p>
         </div>
       )}
 
       {/* Altitude */}
       {hasAlt && (
         <div>
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">高度 (m)</p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.altChartTitle}</p>
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
@@ -876,7 +899,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
               const x = (i / (arr.length - 1 || 1)) * chartWidth;
               const y = chartHeight - ((p.altitude! - minAlt) / altRange) * chartHeight;
               const lines = [
-                `高度: ${p.altitude!.toFixed(1)} m`,
+                t.altTooltip(p.altitude!.toFixed(1)),
                 ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
               ];
               return (
@@ -901,7 +924,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
             )}
           </svg>
           <p className="text-xs text-gray-400 text-right">
-            {minAlt.toFixed(0)}m〜{maxAlt.toFixed(0)}m
+            {t.altRangeLabel(minAlt.toFixed(0), maxAlt.toFixed(0))}
           </p>
         </div>
       )}
@@ -909,7 +932,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
       {/* Satellites */}
       {hasSatellites && (
         <div>
-          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">衛星数</p>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.satChartTitle}</p>
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
@@ -931,7 +954,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
               const x = (i / (arr.length - 1 || 1)) * chartWidth;
               const y = chartHeight - (p.satellites! / (maxSat || 1)) * chartHeight;
               const lines = [
-                `衛星数: ${p.satellites} 個`,
+                t.satTooltip(String(p.satellites)),
                 ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
               ];
               return (
@@ -955,7 +978,7 @@ function ChartPanel({ points, seekIndex }: { points: GpsPoint[]; seekIndex: numb
               <circle cx={seekX} cy={seekSatY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
             )}
           </svg>
-          <p className="text-xs text-gray-400 text-right">最大 {maxSat} 個</p>
+          <p className="text-xs text-gray-400 text-right">{t.satMax(String(maxSat))}</p>
         </div>
       )}
 
@@ -1141,11 +1164,13 @@ function SatellitePanel({
   fileFormat,
   seekIndex,
   satelliteHistory,
+  t,
 }: {
   satellites: SatelliteInfo[];
   fileFormat: FileFormat;
   seekIndex: number;
   satelliteHistory: SatelliteInfo[][];
+  t: Translations;
 }) {
   // Pick the most recent non-empty snapshot at or before seekIndex
   const displaySatellites = useMemo(() => {
@@ -1159,14 +1184,14 @@ function SatellitePanel({
   if (fileFormat !== "nmea") {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        衛星データはNMEAファイルのみ表示できます。
+        {t.satelliteNmeaOnly}
       </div>
     );
   }
   if (displaySatellites.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        衛星データがありません (GSVセンテンスが含まれていないか確認してください)。
+        {t.noSatelliteData}
       </div>
     );
   }
@@ -1195,7 +1220,7 @@ function SatellitePanel({
       {/* Legend */}
       <div>
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-          衛星 ({displaySatellites.length} 機) — スカイプロット
+          {t.satelliteSkyplot(String(displaySatellites.length))}
         </p>
         <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
           {(Object.entries(CONSTELLATION_COLORS) as [Constellation, string][])
@@ -1208,8 +1233,8 @@ function SatellitePanel({
                 {c}
               </span>
             ))}
-          <span className="text-xs text-gray-400" aria-label="凡例: 塗りつぶし円 = 測位に使用中, 空白円 = 捕捉中だが未使用">
-            <span aria-hidden="true">●</span> 測位使用中 / <span aria-hidden="true">○</span> 捕捉中(未使用)
+          <span className="text-xs text-gray-400" aria-label={`${t.inUse} / ${t.inView}`}>
+            <span aria-hidden="true">●</span> {t.inUse} / <span aria-hidden="true">○</span> {t.inView}
           </span>
         </div>
 
@@ -1254,7 +1279,7 @@ function SatellitePanel({
             const labelOffset = 7;
             return (
               <g key={`${sat.constellation}:${sat.prn}`}>
-                <title>{`${sat.constellation} PRN${sat.prn} 仰角:${sat.elevation}° 方位角:${sat.azimuth}° SNR:${sat.snr ?? "—"} dBHz${sat.used ? " ✓測位使用中" : " (未使用)"}`}</title>
+                <title>{t.satTooltipTitle(sat.constellation, String(sat.prn), String(sat.elevation), String(sat.azimuth), sat.snr !== null ? String(sat.snr) : "—", sat.used)}</title>
                 {/* Satellite dot: filled = used in fix, outlined = in view only */}
                 <circle
                   cx={x}
@@ -1284,25 +1309,25 @@ function SatellitePanel({
       {/* ── SNR Bar Chart ── */}
       <div>
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-          SNR (信号強度) — dBHz
+          {t.snrChartTitle}
         </p>
-        <SkyplotSnrBars satellites={displaySatellites} />
+        <SkyplotSnrBars satellites={displaySatellites} t={t} />
       </div>
 
       {/* ── Satellite Table ── */}
       <div>
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-          衛星一覧
+          {t.satelliteListTitle}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <th className="text-left py-1 pr-2">衛星</th>
-                <th className="text-right py-1 pr-2">仰角</th>
-                <th className="text-right py-1 pr-2">方位角</th>
-                <th className="text-right py-1 pr-2">SNR</th>
-                <th className="text-center py-1">使用</th>
+                <th className="text-left py-1 pr-2">{t.satColSat}</th>
+                <th className="text-right py-1 pr-2">{t.satColElevation}</th>
+                <th className="text-right py-1 pr-2">{t.satColAzimuth}</th>
+                <th className="text-right py-1 pr-2">{t.satColSnr}</th>
+                <th className="text-center py-1">{t.satColUsed}</th>
               </tr>
             </thead>
             <tbody>
@@ -1344,11 +1369,11 @@ function SatellitePanel({
 }
 
 /** Vertical bar chart showing SNR per satellite, colour-coded by constellation. */
-function SkyplotSnrBars({ satellites }: { satellites: SatelliteInfo[] }) {
+function SkyplotSnrBars({ satellites, t }: { satellites: SatelliteInfo[]; t: Translations }) {
   const tracked = satellites.filter((s) => s.snr !== null);
   if (tracked.length === 0) {
     return (
-      <p className="text-xs text-gray-400">SNRデータがありません。</p>
+      <p className="text-xs text-gray-400">{t.noSnrData}</p>
     );
   }
   const maxSnr = Math.max(...tracked.map((s) => s.snr as number), 50);
@@ -1390,7 +1415,7 @@ function SkyplotSnrBars({ satellites }: { satellites: SatelliteInfo[] }) {
         const color = CONSTELLATION_COLORS[sat.constellation];
         return (
           <g key={`${sat.constellation}:${sat.prn}`}>
-            <title>{`${sat.constellation} PRN${sat.prn}: ${snr} dBHz${sat.used ? " (使用中)" : ""}`}</title>
+            <title>{t.snrBarTooltip(sat.constellation, String(sat.prn), String(snr), sat.used)}</title>
             <rect
               x={x}
               y={y}
@@ -1431,25 +1456,25 @@ function SkyplotSnrBars({ satellites }: { satellites: SatelliteInfo[] }) {
   );
 }
 
-function RawPanel({ sentences, fileFormat }: { sentences: string[]; fileFormat: FileFormat }) {
+function RawPanel({ sentences, fileFormat, t }: { sentences: string[]; fileFormat: FileFormat; t: Translations }) {
   if (fileFormat !== "nmea" || sentences.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        RAWデータはNMEAファイルのみ表示できます。
+        {t.rawNmeaOnly}
       </div>
     );
   }
   return (
     <div className="p-3">
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-        合計 {sentences.length.toLocaleString()} センテンス
+        {t.rawTotalSentences(sentences.length.toLocaleString())}
       </p>
       <div className="font-mono text-xs bg-gray-900 text-green-400 rounded p-2 h-64 overflow-y-auto whitespace-nowrap">
         {sentences.slice(0, 500).map((s, i) => (
           <div key={i} className="leading-4">{s}</div>
         ))}
         {sentences.length > 500 && (
-          <div className="text-gray-500">… 他 {sentences.length - 500} センテンス</div>
+          <div className="text-gray-500">{t.rawMoreSentences(String(sentences.length - 500))}</div>
         )}
       </div>
     </div>

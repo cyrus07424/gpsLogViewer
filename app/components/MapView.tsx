@@ -14,14 +14,30 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-function buildTooltipContent(p: GpsPoint, label?: string): string {
+export interface MapLabels {
+  speed: string;
+  altitude: string;
+  satellites: string;
+  startMarker: string;
+  endMarker: string;
+}
+
+const DEFAULT_MAP_LABELS: MapLabels = {
+  speed: "速度",
+  altitude: "高度",
+  satellites: "衛星数",
+  startMarker: "スタート",
+  endMarker: "ゴール",
+};
+
+function buildTooltipContent(p: GpsPoint, labels: MapLabels, label?: string): string {
   return [
     label ? `<b>${label}</b>` : "",
     p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
     `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
-    p.speed !== undefined ? `速度: ${p.speed.toFixed(1)} km/h` : "",
-    p.altitude !== undefined ? `高度: ${p.altitude.toFixed(1)} m` : "",
-    p.satellites !== undefined ? `衛星数: ${p.satellites}` : "",
+    p.speed !== undefined ? `${labels.speed}: ${p.speed.toFixed(1)} km/h` : "",
+    p.altitude !== undefined ? `${labels.altitude}: ${p.altitude.toFixed(1)} m` : "",
+    p.satellites !== undefined ? `${labels.satellites}: ${p.satellites}` : "",
     p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
   ]
     .filter(Boolean)
@@ -38,6 +54,7 @@ interface MapViewProps {
   markerType?: MarkerType;
   centerOnMarker?: boolean;
   headingUp?: boolean;
+  mapLabels?: MapLabels;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -102,7 +119,8 @@ function resolvePointBearing(point: GpsPoint, index: number | undefined, points:
   return 0;
 }
 
-export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false }: MapViewProps) {
+export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false, mapLabels }: MapViewProps) {
+  const labels = mapLabels ?? DEFAULT_MAP_LABELS;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
@@ -197,7 +215,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       hoverLine.bindTooltip("", { sticky: true });
       hoverLine.on("mousemove", (e: L.LeafletMouseEvent) => {
         const nearest = findNearest(e.latlng);
-        const content = buildTooltipContent(nearest);
+        const content = buildTooltipContent(nearest, labels);
         if (content) hoverLine.setTooltipContent(content);
       });
       hoverLine.addTo(layer);
@@ -210,7 +228,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       pl.bindTooltip("", { sticky: true });
       pl.on("mousemove", (e: L.LeafletMouseEvent) => {
         const nearest = findNearest(e.latlng);
-        const content = buildTooltipContent(nearest);
+        const content = buildTooltipContent(nearest, labels);
         if (content) pl.setTooltipContent(content);
       });
       pl.addTo(layer);
@@ -225,7 +243,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       iconAnchor: [7, 7],
     });
     L.marker([startPoint.lat, startPoint.lng], { icon: startIcon })
-      .bindTooltip(buildTooltipContent(startPoint, "スタート"), { sticky: true })
+      .bindTooltip(buildTooltipContent(startPoint, labels, labels.startMarker), { sticky: true })
       .addTo(layer);
 
     // End marker (red)
@@ -237,10 +255,10 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       iconAnchor: [7, 7],
     });
     L.marker([endPoint.lat, endPoint.lng], { icon: endIcon })
-      .bindTooltip(buildTooltipContent(endPoint, "ゴール"), { sticky: true })
+      .bindTooltip(buildTooltipContent(endPoint, labels, labels.endMarker), { sticky: true })
       .addTo(layer);
 
-  }, [points, colorBySpeed]);
+  }, [points, colorBySpeed, labels]);
 
   // Fit map to track bounds only when points change (not when colorBySpeed changes)
   useEffect(() => {
@@ -266,7 +284,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     }
 
     const latlng: [number, number] = [seekPoint.lat, seekPoint.lng];
-    const content = buildTooltipContent(seekPoint);
+    const content = buildTooltipContent(seekPoint, labels);
 
     // Center the map on the marker if requested
     if (centerOnMarker) {
@@ -321,7 +339,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
         seekMarkerTypeRef.current = "circle";
       }
     }
-  }, [seekPoint, seekIndex, markerType, points, centerOnMarker, headingUp]);
+  }, [seekPoint, seekIndex, markerType, points, centerOnMarker, headingUp, labels]);
 
   // Update map bearing for heading-up / north-up mode
   useEffect(() => {
