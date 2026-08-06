@@ -6,6 +6,8 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { type GpsPoint } from "../lib/nmeaParser";
 
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+
 // Fix Leaflet default icon path issue in Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -152,7 +154,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     (map.getPane("seekMarkerPane") as HTMLElement).style.zIndex = "650";
 
     // Offer multiple base map choices instead of a fixed single tile layer.
-    const baseLayers: Record<string, L.TileLayer> = {
+    const baseLayers: Record<string, L.Layer> = {
       OpenStreetMap: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -180,6 +182,59 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const layersControlEl = layersControl.getContainer();
     if (layersControlEl) {
       layersControlEl.style.marginTop = "72px";
+    }
+
+    // Load Google Maps Satellite layer when an API key is configured.
+    // The Google Maps JS API script and leaflet.gridlayer.googlemutant are
+    // loaded dynamically to avoid errors when no key is provided.
+    if (GOOGLE_MAPS_API_KEY) {
+      const loadGoogleLayer = async () => {
+        // Inject Google Maps JS API script if not already present
+        const scriptId = "google-maps-api";
+        if (!document.getElementById(scriptId)) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.id = scriptId;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Failed to load Google Maps API"));
+            document.head.appendChild(script);
+          });
+        } else {
+          // Wait until the google global is ready (max 10 s)
+          await new Promise<void>((resolve, reject) => {
+            const start = Date.now();
+            const check = () => {
+              if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>).google) {
+                resolve();
+              } else if (Date.now() - start > 10000) {
+                reject(new Error("Timed out waiting for Google Maps API to initialize"));
+              } else {
+                setTimeout(check, 50);
+              }
+            };
+            check();
+          });
+        }
+
+        // Map may have been destroyed while we awaited
+        if (!mapRef.current) return;
+
+        const { default: GoogleMutant } = await import("leaflet.gridlayer.googlemutant") as { default: typeof import("leaflet.gridlayer.googlemutant") };
+        void GoogleMutant; // ensure the plugin registers itself on L
+
+        const googleSatellite = (L.gridLayer as unknown as { googleMutant: (opts: Record<string, unknown>) => L.Layer }).googleMutant({
+          type: "satellite",
+          maxZoom: 22,
+        });
+
+        layersControl.addBaseLayer(googleSatellite, "Google 衛星");
+      };
+
+      loadGoogleLayer().catch((err) => {
+        console.error("Google Maps layer could not be loaded:", err);
+      });
     }
 
     trackLayerRef.current = L.layerGroup().addTo(map);
