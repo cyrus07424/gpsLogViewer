@@ -10,6 +10,23 @@ export interface GpsPoint {
   vdop?: number;
   satellites?: number;
   fixQuality?: number;
+  // UBX-specific fields
+  /** UBX NAV-PVT fix type: 0=NoFix, 1=DR, 2=2D, 3=3D, 4=GNSS+DR, 5=TimeOnly */
+  fixType?: number;
+  /** Horizontal accuracy estimate (m) from UBX NAV-PVT */
+  hAcc?: number;
+  /** Vertical accuracy estimate (m) from UBX NAV-PVT */
+  vAcc?: number;
+  /** Heading/course accuracy estimate (degrees) from UBX NAV-PVT */
+  headingAcc?: number;
+  /** Position DOP from UBX NAV-DOP */
+  pDOP?: number;
+  /** Vertical DOP from UBX NAV-DOP */
+  vDOP?: number;
+  /** Horizontal DOP from UBX NAV-DOP */
+  hDOP?: number;
+  /** Antenna status from UBX MON-HW (0=Init,1=Unknown,2=OK,3=Short,4=Open) */
+  antennaStatus?: number;
 }
 
 export type Constellation =

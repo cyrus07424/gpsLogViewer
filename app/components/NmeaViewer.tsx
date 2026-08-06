@@ -7,10 +7,12 @@ import { parseGpx } from "../lib/gpxParser";
 import { parseKml, parseKmz } from "../lib/kmlParser";
 import { exportToGpx } from "../lib/gpxExporter";
 import { exportToKml } from "../lib/kmlExporter";
+import { parseUbx, fixTypeLabel, antennaStatusLabel, type ParsedUbx } from "../lib/ubxParser";
+import { downloadRinexObs, downloadRinexNav } from "../lib/rinexExporter";
 import { type MarkerType, type MapLabels } from "./MapView";
 import { useTranslations, type Translations } from "../lib/i18n";
 
-type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
+type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "ubx" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -88,32 +90,65 @@ export default function NmeaViewer() {
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // UBX-specific state
+  const [ubxData, setUbxData] = useState<ParsedUbx | null>(null);
 
   const processFile = useCallback((file: File) => {
     setIsLoading(true);
     setFileName(file.name);
 
     const lower = file.name.toLowerCase();
-    if (lower.endsWith(".kmz")) {
-      // KMZ is a binary ZIP archive — read as ArrayBuffer
+
+    // KMZ and UBX are binary — read as ArrayBuffer
+    if (lower.endsWith(".kmz") || lower.endsWith(".ubx") || lower.endsWith(".bin")) {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const buffer = e.target?.result as ArrayBuffer;
-        setFileFormat("kmz");
-        const result = await parseKmz(buffer);
-        const filledPts = fillMissingSpeed(result.points);
-        setPoints(filledPts);
-        setStats(computeStats(filledPts));
-        setErrors(result.errors);
-        setRawSentences([]);
-        setLastSatellites([]);
-        setSatelliteHistory([]);
-        setSeekIndex(0);
-        setIsPlaying(false);
-        setIsLoading(false);
-        if (result.points.length > 0) {
-          setIsPanelOpen(true);
-          setActiveTab("stats");
+
+        // Detect UBX by magic bytes (0xB5 0x62) or extension
+        const isUbx =
+          lower.endsWith(".ubx") ||
+          (lower.endsWith(".bin") &&
+            buffer.byteLength >= 2 &&
+            new Uint8Array(buffer)[0] === 0xb5 &&
+            new Uint8Array(buffer)[1] === 0x62);
+
+        if (isUbx) {
+          setFileFormat("ubx");
+          const result = parseUbx(buffer);
+          const filledPts = fillMissingSpeed(result.points);
+          setPoints(filledPts);
+          setStats(computeStats(filledPts));
+          setErrors(result.errors);
+          setRawSentences([]);
+          setLastSatellites(result.lastSatellites);
+          setSatelliteHistory(result.satelliteHistory);
+          setUbxData(result);
+          setSeekIndex(0);
+          setIsPlaying(false);
+          setIsLoading(false);
+          if (result.points.length > 0) {
+            setIsPanelOpen(true);
+            setActiveTab("stats");
+          }
+        } else {
+          setFileFormat("kmz");
+          const result = await parseKmz(buffer);
+          const filledPts = fillMissingSpeed(result.points);
+          setPoints(filledPts);
+          setStats(computeStats(filledPts));
+          setErrors(result.errors);
+          setRawSentences([]);
+          setLastSatellites([]);
+          setSatelliteHistory([]);
+          setUbxData(null);
+          setSeekIndex(0);
+          setIsPlaying(false);
+          setIsLoading(false);
+          if (result.points.length > 0) {
+            setIsPanelOpen(true);
+            setActiveTab("stats");
+          }
         }
       };
       reader.onerror = () => {
@@ -127,6 +162,43 @@ export default function NmeaViewer() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
+
+      // Also detect UBX from content magic if extension is ambiguous
+      if (
+        content.length >= 2 &&
+        content.charCodeAt(0) === 0xb5 &&
+        content.charCodeAt(1) === 0x62
+      ) {
+        // Re-read as binary
+        const binReader = new FileReader();
+        binReader.onload = (e2) => {
+          const buf = e2.target?.result as ArrayBuffer;
+          setFileFormat("ubx");
+          const result = parseUbx(buf);
+          const filledPts = fillMissingSpeed(result.points);
+          setPoints(filledPts);
+          setStats(computeStats(filledPts));
+          setErrors(result.errors);
+          setRawSentences([]);
+          setLastSatellites(result.lastSatellites);
+          setSatelliteHistory(result.satelliteHistory);
+          setUbxData(result);
+          setSeekIndex(0);
+          setIsPlaying(false);
+          setIsLoading(false);
+          if (result.points.length > 0) {
+            setIsPanelOpen(true);
+            setActiveTab("stats");
+          }
+        };
+        binReader.onerror = () => {
+          setErrors([t.fileReadError]);
+          setIsLoading(false);
+        };
+        binReader.readAsArrayBuffer(file);
+        return;
+      }
+
       const fmt = detectFormat(file.name, content);
       setFileFormat(fmt);
 
@@ -161,6 +233,7 @@ export default function NmeaViewer() {
       setRawSentences(raw);
       setLastSatellites(sats);
       setSatelliteHistory(satHistory);
+      setUbxData(null);
       setSeekIndex(0);
       setIsPlaying(false);
       setIsLoading(false);
@@ -212,6 +285,7 @@ export default function NmeaViewer() {
     setRawSentences([]);
     setLastSatellites([]);
     setSatelliteHistory([]);
+    setUbxData(null);
     setSeekIndex(0);
     setIsPlaying(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -340,7 +414,7 @@ export default function NmeaViewer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz"
+                accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz,.ubx,.bin"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -371,9 +445,9 @@ export default function NmeaViewer() {
                     {t.clearButton}
                   </button>
                 </div>
-                {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz") && (
+                {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx") && (
                   <div className="flex flex-wrap gap-1 pt-1">
-                    {(fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz") && (
+                    {(fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx") && (
                       <button
                         onClick={() => exportToGpx(points, fileName.replace(/\.[^.]+$/, "") + ".gpx")}
                         className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 rounded px-2 py-1"
@@ -381,13 +455,29 @@ export default function NmeaViewer() {
                         {t.exportToGpx}
                       </button>
                     )}
-                    {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz") && (
+                    {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz" || fileFormat === "ubx") && (
                       <button
                         onClick={() => exportToKml(points, fileName.replace(/\.[^.]+$/, "") + ".kml")}
                         className="flex-1 text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 font-medium border border-green-300 dark:border-green-700 rounded px-2 py-1"
                       >
                         {t.exportToKml}
                       </button>
+                    )}
+                    {fileFormat === "ubx" && ubxData && ubxData.rawObservations.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => downloadRinexObs(ubxData.rawObservations, fileName.replace(/\.[^.]+$/, ""))}
+                          className="flex-1 text-xs text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 font-medium border border-purple-300 dark:border-purple-700 rounded px-2 py-1"
+                        >
+                          {t.exportToRinexObs}
+                        </button>
+                        <button
+                          onClick={() => downloadRinexNav(ubxData.navMessages, fileName.replace(/\.[^.]+$/, ""))}
+                          className="flex-1 text-xs text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 font-medium border border-purple-300 dark:border-purple-700 rounded px-2 py-1"
+                        >
+                          {t.exportToRinexNav}
+                        </button>
+                      </>
                     )}
                   </div>
                 )}
@@ -431,7 +521,7 @@ export default function NmeaViewer() {
 
               <div className="flex-1 overflow-y-auto">
                 {activeTab === "stats" && stats && (
-                  <StatsPanel stats={stats} points={points} colorBySpeed={colorBySpeed} setColorBySpeed={setColorBySpeed} t={t} />
+                  <StatsPanel stats={stats} points={points} colorBySpeed={colorBySpeed} setColorBySpeed={setColorBySpeed} t={t} ubxData={ubxData} />
                 )}
                 {activeTab === "chart" && (
                   <ChartPanel points={points} seekIndex={seekIndex} t={t} />
@@ -446,7 +536,7 @@ export default function NmeaViewer() {
                   />
                 )}
                 {activeTab === "raw" && (
-                  <RawPanel sentences={rawSentences} fileFormat={fileFormat} t={t} />
+                  <RawPanel sentences={rawSentences} fileFormat={fileFormat} ubxData={ubxData} t={t} />
                 )}
               </div>
             </>
@@ -595,15 +685,26 @@ function StatsPanel({
   colorBySpeed,
   setColorBySpeed,
   t,
+  ubxData,
 }: {
   stats: TrackStats;
   points: GpsPoint[];
   colorBySpeed: boolean;
   setColorBySpeed: (v: boolean) => void;
   t: Translations;
+  ubxData: ParsedUbx | null;
 }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
+  // UBX-specific derived values from the last point
+  const lastPt = points[points.length - 1];
+  const lastFixType = lastPt?.fixType;
+  const lastHAcc = lastPt?.hAcc;
+  const lastVAcc = lastPt?.vAcc;
+  const lastPDOP = lastPt?.pDOP;
+  const lastVDOP = lastPt?.vDOP;
+  const lastHDOP = lastPt?.hDOP;
+  const lastAntenna = lastPt?.antennaStatus;
 
   return (
     <div className="p-3 space-y-3">
@@ -658,6 +759,61 @@ function StatsPanel({
         </div>
       )}
 
+      {/* UBX-specific stats */}
+      {(lastFixType !== undefined || lastHAcc !== undefined || lastPDOP !== undefined || lastAntenna !== undefined) && (
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">UBX</p>
+          <div className="grid grid-cols-2 gap-3">
+            {lastFixType !== undefined && (
+              <StatItem label={t.ubxFixType} value={fixTypeLabel(lastFixType)} />
+            )}
+            {lastHAcc !== undefined && (
+              <StatItem label={t.ubxHAcc} value={`${lastHAcc.toFixed(2)} m`} />
+            )}
+            {lastVAcc !== undefined && (
+              <StatItem label={t.ubxVAcc} value={`${lastVAcc.toFixed(2)} m`} />
+            )}
+            {lastPDOP !== undefined && (
+              <StatItem label={t.ubxPDOP} value={lastPDOP.toFixed(2)} />
+            )}
+            {lastVDOP !== undefined && (
+              <StatItem label={t.ubxVDOP} value={lastVDOP.toFixed(2)} />
+            )}
+            {lastHDOP !== undefined && (
+              <StatItem label={t.ubxHDOP} value={lastHDOP.toFixed(2)} />
+            )}
+            {lastAntenna !== undefined && (
+              <StatItem label={t.ubxAntenna} value={antennaStatusLabel(lastAntenna)} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* UBX PPK info */}
+      {ubxData && (
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">{t.ubxPpkExportTitle}</p>
+          {ubxData.rawObservations.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              <StatItem label={t.ubxRawxEpochs} value={String(ubxData.rawObservations.length)} />
+              <StatItem label={t.ubxNavMessages} value={String(ubxData.navMessages.length)} />
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">{t.ubxNoPpkData}</p>
+          )}
+          {ubxData.messageCounts && Object.keys(ubxData.messageCounts).length > 0 && (
+            <details className="mt-2">
+              <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer">{t.ubxMessageStats}</summary>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 font-mono space-y-0.5">
+                {Object.entries(ubxData.messageCounts).map(([k, v]) => (
+                  <div key={k}>{k}: {v}</div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* Display options */}
       <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
         <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">{t.displayOptionsTitle}</p>
@@ -677,12 +833,14 @@ function StatsPanel({
   );
 }
 
-type ChartId = "speed" | "alt" | "satellites" | "scatter" | "enu";
+type ChartId = "speed" | "alt" | "satellites" | "scatter" | "enu" | "accuracy" | "dop";
 
 function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: number; t: Translations }) {
   const hasSpeeds = points.some((p) => p.speed !== undefined);
   const hasAlt = points.some((p) => p.altitude !== undefined);
   const hasSatellites = points.some((p) => p.satellites !== undefined);
+  const hasAccuracy = points.some((p) => p.hAcc !== undefined || p.vAcc !== undefined);
+  const hasDop = points.some((p) => p.pDOP !== undefined || p.hDOP !== undefined || p.vDOP !== undefined);
 
   const [hoveredPoint, setHoveredPoint] = useState<{
     x: number;
@@ -709,7 +867,7 @@ function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: n
     }));
   }, [points]);
 
-  if (!hasSpeeds && !hasAlt && !hasSatellites && enuData.length === 0) {
+  if (!hasSpeeds && !hasAlt && !hasSatellites && enuData.length === 0 && !hasAccuracy && !hasDop) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
         {t.noChartData}
@@ -1140,6 +1298,142 @@ function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: n
           </div>
         </div>
       )}
+
+      {/* Accuracy estimate chart (UBX hAcc / vAcc) */}
+      {hasAccuracy && (() => {
+        const accSampled = sampled.filter((p) => p.hAcc !== undefined || p.vAcc !== undefined);
+        if (accSampled.length === 0) return null;
+        const maxAcc = Math.max(...accSampled.map((p) => Math.max(p.hAcc ?? 0, p.vAcc ?? 0)), 1);
+        const seekAccY =
+          points[seekIndex]?.hAcc !== undefined
+            ? chartHeight - (points[seekIndex].hAcc! / maxAcc) * chartHeight
+            : null;
+        return (
+          <div>
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.ubxAccuracyChartTitle}</p>
+            <svg
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+              onMouseLeave={() => setHoveredPoint(null)}
+            >
+              {/* hAcc (blue) */}
+              <polyline
+                points={accSampled.filter((p) => p.hAcc !== undefined)
+                  .map((p, i, arr) => {
+                    const x = (i / (arr.length - 1 || 1)) * chartWidth;
+                    const y = chartHeight - (p.hAcc! / maxAcc) * chartHeight;
+                    return `${x},${y}`;
+                  }).join(" ")}
+                fill="none" stroke="#3b82f6" strokeWidth="1.5"
+              />
+              {/* vAcc (amber) */}
+              <polyline
+                points={accSampled.filter((p) => p.vAcc !== undefined)
+                  .map((p, i, arr) => {
+                    const x = (i / (arr.length - 1 || 1)) * chartWidth;
+                    const y = chartHeight - (p.vAcc! / maxAcc) * chartHeight;
+                    return `${x},${y}`;
+                  }).join(" ")}
+                fill="none" stroke="#f59e0b" strokeWidth="1.5"
+              />
+              {accSampled.map((p, i, arr) => {
+                const x = (i / (arr.length - 1 || 1)) * chartWidth;
+                const y = chartHeight - ((p.hAcc ?? p.vAcc ?? 0) / maxAcc) * chartHeight;
+                const lines = [
+                  ...(p.hAcc !== undefined ? [t.ubxHAccTooltip(p.hAcc.toFixed(2))] : []),
+                  ...(p.vAcc !== undefined ? [t.ubxVAccTooltip(p.vAcc.toFixed(2))] : []),
+                  ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
+                ];
+                return (
+                  <circle key={i} cx={x} cy={y} r={6} fill="transparent" stroke="none"
+                    style={{ cursor: "crosshair" }}
+                    onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "accuracy" })}
+                  />
+                );
+              })}
+              {hoveredPoint?.chartId === "accuracy" &&
+                renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+              <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+              {seekAccY !== null && (
+                <circle cx={seekX} cy={seekAccY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+              )}
+            </svg>
+            <div className="flex gap-3 mt-1 text-xs">
+              <span className="text-blue-500">■ H.Acc</span>
+              <span className="text-amber-500">■ V.Acc</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* DOP chart (UBX NAV-DOP) */}
+      {hasDop && (() => {
+        const dopSampled = sampled.filter((p) => p.pDOP !== undefined || p.hDOP !== undefined || p.vDOP !== undefined);
+        if (dopSampled.length === 0) return null;
+        const maxDop = Math.max(...dopSampled.map((p) => Math.max(p.pDOP ?? 0, p.hDOP ?? 0, p.vDOP ?? 0)), 1);
+        const seekDopY =
+          points[seekIndex]?.pDOP !== undefined
+            ? chartHeight - (points[seekIndex].pDOP! / maxDop) * chartHeight
+            : null;
+        return (
+          <div>
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.ubxDopChartTitle}</p>
+            <svg
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              className="w-full border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800"
+              onMouseLeave={() => setHoveredPoint(null)}
+            >
+              {/* PDOP (purple) */}
+              <polyline
+                points={dopSampled.filter((p) => p.pDOP !== undefined)
+                  .map((p, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${chartHeight - (p.pDOP! / maxDop) * chartHeight}`)
+                  .join(" ")}
+                fill="none" stroke="#a855f7" strokeWidth="1.5"
+              />
+              {/* HDOP (blue) */}
+              <polyline
+                points={dopSampled.filter((p) => p.hDOP !== undefined)
+                  .map((p, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${chartHeight - (p.hDOP! / maxDop) * chartHeight}`)
+                  .join(" ")}
+                fill="none" stroke="#3b82f6" strokeWidth="1.5"
+              />
+              {/* VDOP (amber) */}
+              <polyline
+                points={dopSampled.filter((p) => p.vDOP !== undefined)
+                  .map((p, i, arr) => `${(i / (arr.length - 1 || 1)) * chartWidth},${chartHeight - (p.vDOP! / maxDop) * chartHeight}`)
+                  .join(" ")}
+                fill="none" stroke="#f59e0b" strokeWidth="1.5"
+              />
+              {dopSampled.map((p, i, arr) => {
+                const x = (i / (arr.length - 1 || 1)) * chartWidth;
+                const y = chartHeight - ((p.pDOP ?? p.hDOP ?? p.vDOP ?? 0) / maxDop) * chartHeight;
+                const lines = [
+                  ...(p.pDOP !== undefined ? [t.ubxPDopTooltip(p.pDOP.toFixed(2))] : []),
+                  ...(p.hDOP !== undefined ? [t.ubxHDopTooltip(p.hDOP.toFixed(2))] : []),
+                  ...(p.timestamp ? [p.timestamp.toLocaleString()] : []),
+                ];
+                return (
+                  <circle key={i} cx={x} cy={y} r={6} fill="transparent" stroke="none"
+                    style={{ cursor: "crosshair" }}
+                    onMouseEnter={() => setHoveredPoint({ x, y, lines, chartId: "dop" })}
+                  />
+                );
+              })}
+              {hoveredPoint?.chartId === "dop" &&
+                renderSvgTooltip(hoveredPoint.x, hoveredPoint.y, hoveredPoint.lines)}
+              <line x1={seekX} y1={0} x2={seekX} y2={chartHeight} stroke="#f97316" strokeWidth="1" strokeDasharray="3,2" opacity={0.7} style={{ pointerEvents: "none" }} />
+              {seekDopY !== null && (
+                <circle cx={seekX} cy={seekDopY} r={4} fill="#f97316" stroke="white" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
+              )}
+            </svg>
+            <div className="flex gap-3 mt-1 text-xs">
+              <span className="text-purple-500">■ PDOP</span>
+              <span className="text-blue-500">■ HDOP</span>
+              <span className="text-amber-500">■ VDOP</span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1179,10 +1473,10 @@ function SatellitePanel({
     return satellites;
   }, [seekIndex, satelliteHistory, satellites]);
 
-  if (fileFormat !== "nmea") {
+  if (fileFormat !== "nmea" && fileFormat !== "ubx") {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
-        {t.satelliteNmeaOnly}
+        {t.satelliteUbxOnly}
       </div>
     );
   }
@@ -1454,7 +1748,51 @@ function SkyplotSnrBars({ satellites, t }: { satellites: SatelliteInfo[]; t: Tra
   );
 }
 
-function RawPanel({ sentences, fileFormat, t }: { sentences: string[]; fileFormat: FileFormat; t: Translations }) {
+function RawPanel({ sentences, fileFormat, ubxData, t }: { sentences: string[]; fileFormat: FileFormat; ubxData: ParsedUbx | null; t: Translations }) {
+  if (fileFormat === "ubx" && ubxData) {
+    return (
+      <div className="p-3 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{t.ubxMessageStats}</p>
+          <div className="font-mono text-xs bg-gray-900 text-green-400 rounded p-2 h-40 overflow-y-auto">
+            {Object.entries(ubxData.messageCounts).sort(([, a], [, b]) => b - a).map(([k, v]) => (
+              <div key={k}>{k.padEnd(12)} {v}</div>
+            ))}
+          </div>
+        </div>
+        {ubxData.rawObservations.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              {t.ubxRawxEpochs}: {ubxData.rawObservations.length}
+            </p>
+            <div className="font-mono text-xs bg-gray-900 text-green-400 rounded p-2 h-40 overflow-y-auto whitespace-nowrap">
+              {ubxData.rawObservations.slice(0, 200).map((epoch, i) => (
+                <div key={i}>
+                  tow={epoch.tow.toFixed(3)} wk={epoch.week} n={epoch.obs.length}
+                </div>
+              ))}
+              {ubxData.rawObservations.length > 200 && (
+                <div className="text-gray-500">… {ubxData.rawObservations.length - 200} more</div>
+              )}
+            </div>
+          </div>
+        )}
+        {ubxData.clockHistory.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              NAV-CLOCK ({ubxData.clockHistory.length})
+            </p>
+            <div className="font-mono text-xs bg-gray-900 text-green-400 rounded p-2 h-32 overflow-y-auto whitespace-nowrap">
+              {ubxData.clockHistory.slice(0, 100).map((c, i) => (
+                <div key={i}>iTow={c.iTow} clkB={c.clkB}ns drift={c.clkD}ns/s</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (fileFormat !== "nmea" || sentences.length === 0) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
