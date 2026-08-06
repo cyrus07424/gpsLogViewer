@@ -136,6 +136,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const map = L.map(containerRef.current, {
       center: [35.6812, 139.7671], // Tokyo as default
       zoom: 13,
+      maxZoom: 22,
       zoomControl: false,
       rotate: true,
       bearing: 0,
@@ -158,21 +159,25 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
       OpenStreetMap: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 22,
       }),
       "OpenStreetMap HOT": L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by Humanitarian OpenStreetMap Team hosted by OpenStreetMap France',
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 22,
       }),
       OpenTopoMap: L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
         attribution:
           'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
-        maxZoom: 17,
+        maxNativeZoom: 17,
+        maxZoom: 22,
       }),
       Satellite: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         attribution: "Tiles &copy; Esri",
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 22,
       }),
     };
 
