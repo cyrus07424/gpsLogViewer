@@ -105,6 +105,29 @@ export interface Translations {
   rawTotalSentences: (n: string) => string;
   rawMoreSentences: (n: string) => string;
 
+  // UBX
+  exportToRinexObs: string;
+  exportToRinexNav: string;
+  ubxFixType: string;
+  ubxHAcc: string;
+  ubxVAcc: string;
+  ubxPDOP: string;
+  ubxVDOP: string;
+  ubxHDOP: string;
+  ubxAntenna: string;
+  ubxMessageStats: string;
+  ubxRawxEpochs: string;
+  ubxNavMessages: string;
+  ubxNoPpkData: string;
+  ubxPpkExportTitle: string;
+  ubxAccuracyChartTitle: string;
+  ubxDopChartTitle: string;
+  ubxHAccTooltip: (v: string) => string;
+  ubxVAccTooltip: (v: string) => string;
+  ubxPDopTooltip: (v: string) => string;
+  ubxHDopTooltip: (v: string) => string;
+  satelliteUbxOnly: string;
+
   // Playback controls
   pause: string;
   play: string;
