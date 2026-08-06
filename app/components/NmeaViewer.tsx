@@ -1359,8 +1359,8 @@ function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: n
               )}
             </svg>
             <div className="flex gap-3 mt-1 text-xs">
-              <span className="text-blue-500">■ H.Acc</span>
-              <span className="text-amber-500">■ V.Acc</span>
+              <span className="text-blue-500">■ {t.ubxHAcc}</span>
+              <span className="text-amber-500">■ {t.ubxVAcc}</span>
             </div>
           </div>
         );
@@ -1427,9 +1427,9 @@ function ChartPanel({ points, seekIndex, t }: { points: GpsPoint[]; seekIndex: n
               )}
             </svg>
             <div className="flex gap-3 mt-1 text-xs">
-              <span className="text-purple-500">■ PDOP</span>
-              <span className="text-blue-500">■ HDOP</span>
-              <span className="text-amber-500">■ VDOP</span>
+              <span className="text-purple-500">■ {t.ubxPDOP}</span>
+              <span className="text-blue-500">■ {t.ubxHDOP}</span>
+              <span className="text-amber-500">■ {t.ubxVDOP}</span>
             </div>
           </div>
         );

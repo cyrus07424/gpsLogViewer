@@ -372,7 +372,7 @@ export function parseUbx(buffer: ArrayBuffer): ParsedUbx {
           // prStd = 0.01 * 2^(prStdRaw & 0xF)
           const prStd = 0.01 * Math.pow(2, prStdRaw & 0x0f);
           // cpStd = 0.004 * (cpStdRaw & 0xF)
-          const cpStd = 0.004 * (cpStdRaw & 0x0f);
+          const cpStd = 0.004 * Math.pow(2, cpStdRaw & 0x0f);
 
           // Only include valid pseudorange measurements
           if ((trkStat & 0x01) !== 0 && isFinite(prMes) && prMes > 0) {

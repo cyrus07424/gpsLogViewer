@@ -335,7 +335,7 @@ function signExtend32(v: number): number {
 /** Format a floating-point number in RINEX 19.12D notation */
 function fmtN(v: number): string {
   if (!isFinite(v)) return "   0.000000000000D+00";
-  const s = v.toExponential(12).replace("e", "D").replace("e+", "D+").replace("e-", "D-");
+  const s = v.toExponential(12).replace(/e([+-]?\d+)/, "D$1");
   // Ensure exponent is 2 digits with sign
   return s.replace(/D([+-])(\d)$/, "D$1+0$2").replace(/D\+(\d{2})$/, "D+$1").padStart(19);
 }
