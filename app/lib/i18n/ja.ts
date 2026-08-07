@@ -13,7 +13,7 @@ export const ja: Translations = {
   selectAnotherFile: "別のファイルを選択",
   dropFileHere: "📂 GPSログファイルをここにドロップ",
   orClickToSelect: "またはクリックして選択",
-  supportedFormats: "(.nmea / .gpx / .kml / .kmz / .txt / .log)",
+  supportedFormats: "(.nmea / .gpx / .kml / .kmz / .csv / .txt / .log)",
   clearButton: "クリア",
   exportToGpx: "⬇ GPXに変換",
   exportToKml: "⬇ KMLに変換",

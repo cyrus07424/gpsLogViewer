@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import { type GpsPoint } from "../lib/nmeaParser";
+import { type RadioNetwork } from "../lib/wigleParser";
 
 // Fix Leaflet default icon path issue in Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -20,6 +21,10 @@ export interface MapLabels {
   satellites: string;
   startMarker: string;
   endMarker: string;
+  wifi?: string;
+  bluetooth?: string;
+  cellTower?: string;
+  signal?: string;
 }
 
 const DEFAULT_MAP_LABELS: MapLabels = {
@@ -55,6 +60,9 @@ interface MapViewProps {
   centerOnMarker?: boolean;
   headingUp?: boolean;
   mapLabels?: MapLabels;
+  networks?: RadioNetwork[];
+  selectedNetwork?: RadioNetwork | null;
+  onNetworkSelect?: (network: RadioNetwork | null) => void;
 }
 
 function speedColor(speed?: number, maxSpeed?: number): string {
@@ -119,11 +127,13 @@ function resolvePointBearing(point: GpsPoint, index: number | undefined, points:
   return 0;
 }
 
-export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false, mapLabels }: MapViewProps) {
+export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false, mapLabels, networks, selectedNetwork, onNetworkSelect }: MapViewProps) {
   const labels = mapLabels ?? DEFAULT_MAP_LABELS;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
+  const radioLayerRef = useRef<L.LayerGroup | null>(null);
+  const highlightLayerRef = useRef<L.LayerGroup | null>(null);
   const seekMarkerRef = useRef<L.Marker | null>(null);
   const seekMarkerTypeRef = useRef<MarkerType | null>(null);
 
@@ -183,6 +193,8 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     }
 
     trackLayerRef.current = L.layerGroup().addTo(map);
+    radioLayerRef.current = L.layerGroup().addTo(map);
+    highlightLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
     return () => {
@@ -390,6 +402,160 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const travelBearing = resolvePointBearing(seekPoint, seekIndex, points);
     map.setBearing((360 - travelBearing) % 360);
   }, [headingUp, seekPoint, seekIndex, points]);
+
+  // Update radio networks visualization
+  useEffect(() => {
+    const layer = radioLayerRef.current;
+    const highlightLayer = highlightLayerRef.current;
+    if (!layer || !highlightLayer) return;
+
+    layer.clearLayers();
+    highlightLayer.clearLayers();
+
+    if (!networks || networks.length === 0) return;
+
+    // Function to convert dBm to estimated coverage radius (meters)
+    // Based on Free Space Path Loss formula: P = P0 - 20*log10(d) - 20*log10(f)
+    // Simplified: higher dBm (closer to 0) = larger circle, lower dBm (more negative) = smaller circle
+    const dBmToRadius = (signal: number): number => {
+      // Signal ranges from -100 (very far) to -30 (very close)
+      // Map to radius: -30 = 300m, -100 = 10m
+      const normalized = Math.max(-100, Math.min(-30, signal));
+      const ratio = (normalized + 100) / 70; // 0 to 1
+      return 10 + ratio * 290; // 10m to 300m
+    };
+
+    // Calculate network density at each point for heatmap effect
+    // Count how many networks are within 200m of each point
+    const getNetworkDensity = (lat: number, lng: number, maxDist: number = 200): number => {
+      let count = 0;
+      for (const n of networks) {
+        const dlat = n.lat - lat;
+        const dlng = n.lng - lng;
+        const distMeters = Math.sqrt(dlat * dlat + dlng * dlng) * 111000; // rough conversion
+        if (distMeters < maxDist) count++;
+      }
+      return count;
+    };
+
+    // Function to get color based on signal strength
+    const getSignalColor = (signal: number, type: string): string => {
+      const strength = Math.min(100, Math.max(0, (signal + 100) / 70 * 100));
+      
+      if (type === "wifi") {
+        return strength > 66 ? "#22c55e" : strength > 33 ? "#eab308" : "#ef4444";
+      } else if (type === "bluetooth") {
+        return strength > 66 ? "#3b82f6" : strength > 33 ? "#60a5fa" : "#93c5fd";
+      } else {
+        // cell tower
+        return strength > 66 ? "#a855f7" : strength > 33 ? "#c084fc" : "#e9d5ff";
+      }
+    };
+
+    const getTypeIcon = (type: string): string => {
+      switch (type) {
+        case "wifi":
+          return "📶";
+        case "bluetooth":
+          return "🔵";
+        case "cell":
+          return "📡";
+        default:
+          return "📍";
+      }
+    };
+
+    // First pass: render coverage circles
+    const maxDensity = networks.length > 0 ? Math.max(...networks.map(n => getNetworkDensity(n.lat, n.lng))) : 1;
+
+    networks.forEach((network) => {
+      const color = getSignalColor(network.signal, network.type);
+      const radius = dBmToRadius(network.signal);
+      const isSelected = selectedNetwork?.mac === network.mac;
+      
+      // Calculate local density to emphasize crowded areas
+      const density = getNetworkDensity(network.lat, network.lng);
+      const densityRatio = Math.min(density / Math.max(maxDensity, 1), 1);
+
+      // Coverage area circle (larger, semi-transparent)
+      // More opaque when many networks are close by
+      const coverageCircle = L.circle([network.lat, network.lng], {
+        radius: radius,
+        fillColor: color,
+        color: isSelected ? "#000" : color,
+        weight: isSelected ? 2 : 1,
+        opacity: isSelected ? 0.8 : 0.4,
+        fillOpacity: isSelected ? 0.25 : (0.08 + densityRatio * 0.12),
+        interactive: false,
+      });
+      coverageCircle.addTo(layer);
+
+      // Center marker (smaller circle, solid)
+      const markerRadius = Math.max(5, radius * 0.08);
+      const markerCircle = L.circle([network.lat, network.lng], {
+        radius: markerRadius,
+        fillColor: color,
+        color: isSelected ? "#000" : color,
+        weight: isSelected ? 3 : (1.5 + densityRatio * 1),
+        opacity: isSelected ? 1 : (0.8 + densityRatio * 0.2),
+        fillOpacity: isSelected ? 1 : (0.85 + densityRatio * 0.15),
+      });
+
+      // Build tooltip
+      const tooltipLines = [
+        `<b>${getTypeIcon(network.type)} ${network.type.toUpperCase()}</b>`,
+        `MAC: ${network.mac}`,
+        `Signal: ${network.signal} dBm`,
+        `Coverage: ~${radius.toFixed(0)}m`,
+        `Nearby networks: ${density}`,
+      ];
+
+      if (network.ssid) tooltipLines.push(`SSID: ${network.ssid}`);
+      if (network.name) tooltipLines.push(`Name: ${network.name}`);
+      if (network.provider) tooltipLines.push(`Provider: ${network.provider}`);
+      if (network.channel) tooltipLines.push(`Channel: ${network.channel}`);
+      if (network.frequency) tooltipLines.push(`Frequency: ${network.frequency} MHz`);
+      if (network.firstSeen) tooltipLines.push(`First: ${network.firstSeen.toLocaleString()}`);
+
+      markerCircle
+        .bindTooltip(tooltipLines.join("<br>"), { sticky: true })
+        .on("click", () => {
+          onNetworkSelect?.(network);
+        });
+
+      markerCircle.addTo(layer);
+    });
+
+    // Highlight area if a network is selected
+    if (selectedNetwork) {
+      // Find all networks of the same type near the selected one
+      const relatedNetworks = networks.filter(
+        (n) =>
+          n.type === selectedNetwork.type &&
+          Math.sqrt(
+            Math.pow(n.lat - selectedNetwork.lat, 2) +
+              Math.pow(n.lng - selectedNetwork.lng, 2)
+          ) < 0.01 // ~1km
+      );
+
+      // Create a bounding circle around related networks
+      if (relatedNetworks.length > 1) {
+        const latlngs = relatedNetworks.map((n) => [n.lat, n.lng] as [number, number]);
+        const bounds = L.latLngBounds(latlngs);
+        const circleRadius = bounds.getNorthEast().distanceTo(bounds.getCenter());
+
+        const circle = L.circle([bounds.getCenter().lat, bounds.getCenter().lng], {
+          radius: circleRadius * 1.2, // Add some padding
+          color: getSignalColor(selectedNetwork.signal, selectedNetwork.type),
+          weight: 2,
+          opacity: 0.3,
+          fillOpacity: 0.1,
+          dashArray: "5, 5",
+        });
+        circle.addTo(highlightLayer);
+      }
+    }
+  }, [networks, selectedNetwork, onNetworkSelect]);
 
   return (
     <div

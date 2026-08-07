@@ -14,7 +14,7 @@ export const en: Translations = {
   selectAnotherFile: "Select another file",
   dropFileHere: "📂 Drop a GPS log file here",
   orClickToSelect: "or click to select",
-  supportedFormats: "(.nmea / .gpx / .kml / .kmz / .txt / .log)",
+  supportedFormats: "(.nmea / .gpx / .kml / .kmz / .csv / .txt / .log)",
   clearButton: "Clear",
   exportToGpx: "⬇ Export as GPX",
   exportToKml: "⬇ Export as KML",

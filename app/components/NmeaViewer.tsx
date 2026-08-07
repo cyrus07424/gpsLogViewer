@@ -5,12 +5,13 @@ import dynamic from "next/dynamic";
 import { parseNmea, computeStats, fillMissingSpeed, type GpsPoint, type TrackStats, type SatelliteInfo, type Constellation } from "../lib/nmeaParser";
 import { parseGpx } from "../lib/gpxParser";
 import { parseKml, parseKmz } from "../lib/kmlParser";
+import { parseWigleCsv, type RadioNetwork } from "../lib/wigleParser";
 import { exportToGpx } from "../lib/gpxExporter";
 import { exportToKml } from "../lib/kmlExporter";
 import { type MarkerType, type MapLabels } from "./MapView";
 import { useTranslations, type Translations } from "../lib/i18n";
 
-type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "unknown";
+type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "wigle" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -49,6 +50,17 @@ function detectFormat(fileName: string, content: string): FileFormat {
   if (lower.endsWith(".gpx")) return "gpx";
   if (lower.endsWith(".kmz")) return "kmz";
   if (lower.endsWith(".kml")) return "kml";
+  if (lower.endsWith(".csv")) {
+    // Check if it's a Wigle CSV by looking for key headers
+    const firstLine = content.split("\n")[0].toLowerCase();
+    if (
+      (firstLine.includes("mac") && firstLine.includes("ssid")) ||
+      (firstLine.includes("mac") && firstLine.includes("name") && firstLine.includes("signal")) ||
+      (firstLine.includes("cellid") && firstLine.includes("latitude"))
+    ) {
+      return "wigle";
+    }
+  }
   if (lower.endsWith(".nmea") || lower.endsWith(".nma") || lower.endsWith(".log") || lower.endsWith(".txt")) return "nmea";
   // Content-based detection: check for specific root elements
   const trimmed = content.trimStart();
@@ -74,7 +86,7 @@ export default function NmeaViewer() {
   const [isDragging, setIsDragging] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"stats" | "chart" | "satellite" | "raw">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "chart" | "satellite" | "raw" | "networks">("stats");
   const [rawSentences, setRawSentences] = useState<string[]>([]);
   const [lastSatellites, setLastSatellites] = useState<SatelliteInfo[]>([]);
   const [colorBySpeed, setColorBySpeed] = useState(false);
@@ -85,6 +97,8 @@ export default function NmeaViewer() {
   const [playSpeed, setPlaySpeed] = useState(10);
   const [centerOnMarker, setCenterOnMarker] = useState(false);
   const [headingUp, setHeadingUp] = useState(false);
+  const [networks, setNetworks] = useState<RadioNetwork[]>([]);
+  const [selectedNetwork, setSelectedNetwork] = useState<RadioNetwork | null>(null);
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,41 +144,48 @@ export default function NmeaViewer() {
       const fmt = detectFormat(file.name, content);
       setFileFormat(fmt);
 
-      let pts: GpsPoint[] = [];
-      let errs: string[] = [];
-      let raw: string[] = [];
-      let sats: SatelliteInfo[] = [];
-      let satHistory: SatelliteInfo[][] = [];
+       let pts: GpsPoint[] = [];
+       let errs: string[] = [];
+       let raw: string[] = [];
+       let sats: SatelliteInfo[] = [];
+       let satHistory: SatelliteInfo[][] = [];
+       let nets: RadioNetwork[] = [];
 
-      if (fmt === "gpx") {
-        const result = parseGpx(content);
-        pts = result.points;
-        errs = result.errors;
-      } else if (fmt === "kml") {
-        const result = parseKml(content);
-        pts = result.points;
-        errs = result.errors;
-      } else {
-        // Default to NMEA (including "unknown")
-        const result = parseNmea(content);
-        pts = result.points;
-        errs = result.errors;
-        raw = result.rawSentences;
-        sats = result.lastSatellites;
-        satHistory = result.satelliteHistory;
-      }
+       if (fmt === "gpx") {
+         const result = parseGpx(content);
+         pts = result.points;
+         errs = result.errors;
+       } else if (fmt === "kml") {
+         const result = parseKml(content);
+         pts = result.points;
+         errs = result.errors;
+       } else if (fmt === "wigle") {
+         const result = parseWigleCsv(content);
+         nets = result.networks;
+         errs = result.errors;
+       } else {
+         // Default to NMEA (including "unknown")
+         const result = parseNmea(content);
+         pts = result.points;
+         errs = result.errors;
+         raw = result.rawSentences;
+         sats = result.lastSatellites;
+         satHistory = result.satelliteHistory;
+       }
 
-      const filledPts = fillMissingSpeed(pts);
-      setPoints(filledPts);
-      setStats(computeStats(filledPts));
-      setErrors(errs);
-      setRawSentences(raw);
-      setLastSatellites(sats);
-      setSatelliteHistory(satHistory);
-      setSeekIndex(0);
-      setIsPlaying(false);
-      setIsLoading(false);
-      if (pts.length > 0) {
+       const filledPts = fillMissingSpeed(pts);
+       setPoints(filledPts);
+       setStats(computeStats(filledPts));
+       setErrors(errs);
+       setRawSentences(raw);
+       setLastSatellites(sats);
+       setSatelliteHistory(satHistory);
+       setNetworks(nets);
+       setSelectedNetwork(null);
+       setSeekIndex(0);
+       setIsPlaying(false);
+       setIsLoading(false);
+       if (pts.length > 0 || nets.length > 0) {
         setIsPanelOpen(true);
         setActiveTab("stats");
       }
@@ -212,6 +233,8 @@ export default function NmeaViewer() {
     setRawSentences([]);
     setLastSatellites([]);
     setSatelliteHistory([]);
+    setNetworks([]);
+    setSelectedNetwork(null);
     setSeekIndex(0);
     setIsPlaying(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -286,6 +309,9 @@ export default function NmeaViewer() {
         markerType={markerType}
         centerOnMarker={centerOnMarker}
         headingUp={headingUp}
+        networks={networks}
+        selectedNetwork={selectedNetwork}
+        onNetworkSelect={setSelectedNetwork}
         mapLabels={{
           speed: t.mapSpeed,
           altitude: t.mapAltitude,
@@ -337,13 +363,13 @@ export default function NmeaViewer() {
                   : "border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500"
               }`}
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz"
-                onChange={handleFileChange}
-                className="hidden"
-              />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".nmea,.txt,.log,.nma,.gpx,.kml,.kmz,.csv"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
               {isLoading ? (
                 <p className="text-sm text-blue-600 dark:text-blue-400">{t.loading}</p>
               ) : fileName ? (
@@ -411,10 +437,10 @@ export default function NmeaViewer() {
           )}
 
           {/* Tabs */}
-          {points.length > 0 && (
+          {(points.length > 0 || networks.length > 0) && (
             <>
               <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                {(["stats", "chart", "satellite", "raw"] as const).map((tab) => (
+                {(["stats", "chart", "satellite", "raw", "networks"] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -424,7 +450,7 @@ export default function NmeaViewer() {
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
-                    {tab === "stats" ? t.tabStats : tab === "chart" ? t.tabChart : tab === "satellite" ? t.tabSatellite : t.tabRaw}
+                    {tab === "stats" ? t.tabStats : tab === "chart" ? t.tabChart : tab === "satellite" ? t.tabSatellite : tab === "raw" ? t.tabRaw : "Networks"}
                   </button>
                 ))}
               </div>
@@ -447,6 +473,9 @@ export default function NmeaViewer() {
                 )}
                 {activeTab === "raw" && (
                   <RawPanel sentences={rawSentences} fileFormat={fileFormat} t={t} />
+                )}
+                {activeTab === "networks" && (
+                  <NetworksPanel networks={networks} selectedNetwork={selectedNetwork} onSelect={setSelectedNetwork} t={t} />
                 )}
               </div>
             </>
@@ -1478,3 +1507,101 @@ function RawPanel({ sentences, fileFormat, t }: { sentences: string[]; fileForma
     </div>
   );
 }
+
+function NetworksPanel({
+  networks,
+  selectedNetwork,
+  onSelect,
+  t,
+}: {
+  networks: RadioNetwork[];
+  selectedNetwork: RadioNetwork | null;
+  onSelect: (network: RadioNetwork | null) => void;
+  t: Translations;
+}) {
+  const wifiNetworks = networks.filter((n) => n.type === "wifi");
+  const bluetoothNetworks = networks.filter((n) => n.type === "bluetooth");
+  const cellNetworks = networks.filter((n) => n.type === "cell");
+
+  const getSignalStrength = (signal: number): string => {
+    // Signal is typically in dBm (negative values, -100 to -30)
+    const strength = Math.min(100, Math.max(0, (signal + 100) / 70 * 100));
+    if (strength > 66) return "Strong";
+    if (strength > 33) return "Fair";
+    return "Weak";
+  };
+
+  const NetworkTable = ({ networks, title }: { networks: RadioNetwork[]; title: string }) => (
+    <div className="mb-4">
+      <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">
+        {title} ({networks.length})
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+              <th className="text-left py-1 px-2">ID / SSID</th>
+              <th className="text-center py-1 px-2">Signal</th>
+              <th className="text-center py-1 px-2">Strength</th>
+            </tr>
+          </thead>
+          <tbody>
+            {networks.map((net) => (
+              <tr
+                key={net.mac}
+                onClick={() => onSelect(selectedNetwork?.mac === net.mac ? null : net)}
+                className={`border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors ${
+                  selectedNetwork?.mac === net.mac
+                    ? "bg-blue-100 dark:bg-blue-900/30"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                }`}
+              >
+                <td className="py-2 px-2 font-medium truncate">
+                  {net.ssid || net.name || net.cellId || net.mac}
+                </td>
+                <td className="text-center py-2 px-2">{net.signal} dBm</td>
+                <td className="text-center py-2 px-2">{getSignalStrength(net.signal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  if (networks.length === 0) {
+    return (
+      <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
+        No networks loaded
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-4">
+      {wifiNetworks.length > 0 && <NetworkTable networks={wifiNetworks} title="📶 WiFi Networks" />}
+      {bluetoothNetworks.length > 0 && <NetworkTable networks={bluetoothNetworks} title="🔵 Bluetooth Devices" />}
+      {cellNetworks.length > 0 && <NetworkTable networks={cellNetworks} title="📡 Cell Towers" />}
+
+      {selectedNetwork && (
+        <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">Selected Details</p>
+          <div className="text-xs space-y-1 text-gray-700 dark:text-gray-300">
+            <div><span className="font-medium">Type:</span> {selectedNetwork.type.toUpperCase()}</div>
+            <div><span className="font-medium">MAC:</span> <code className="text-[10px] bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">{selectedNetwork.mac}</code></div>
+            <div><span className="font-medium">Signal:</span> {selectedNetwork.signal} dBm ({getSignalStrength(selectedNetwork.signal)})</div>
+            {selectedNetwork.ssid && <div><span className="font-medium">SSID:</span> {selectedNetwork.ssid}</div>}
+            {selectedNetwork.name && <div><span className="font-medium">Name:</span> {selectedNetwork.name}</div>}
+            {selectedNetwork.provider && <div><span className="font-medium">Provider:</span> {selectedNetwork.provider}</div>}
+            {selectedNetwork.channel && <div><span className="font-medium">Channel:</span> {selectedNetwork.channel}</div>}
+            {selectedNetwork.frequency && <div><span className="font-medium">Frequency:</span> {selectedNetwork.frequency} MHz</div>}
+            <div><span className="font-medium">Position:</span> {selectedNetwork.lat.toFixed(6)}, {selectedNetwork.lng.toFixed(6)}</div>
+            {selectedNetwork.altitude && <div><span className="font-medium">Altitude:</span> {selectedNetwork.altitude.toFixed(1)} m</div>}
+            {selectedNetwork.firstSeen && <div><span className="font-medium">First Seen:</span> {selectedNetwork.firstSeen.toLocaleString()}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
