@@ -53,6 +53,7 @@ jobs:
         run: npm run build
         env:
           PAGES_BASE_PATH: ${{ steps.setup_pages.outputs.base_path }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
       - name: Add label (if Pull Request)
         uses: actions/github-script@v9
         if: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}

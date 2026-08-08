@@ -445,9 +445,10 @@ export default function NmeaViewer() {
                     {t.clearButton}
                   </button>
                 </div>
-                {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx") && (
+                {((points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx")) ||
+                  (fileFormat === "ubx" && ubxData && ubxData.rawObservations.length > 0)) && (
                   <div className="flex flex-wrap gap-1 pt-1">
-                    {(fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx") && (
+                    {points.length > 0 && (fileFormat === "nmea" || fileFormat === "kml" || fileFormat === "kmz" || fileFormat === "ubx") && (
                       <button
                         onClick={() => exportToGpx(points, fileName.replace(/\.[^.]+$/, "") + ".gpx")}
                         className="flex-1 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 rounded px-2 py-1"
@@ -455,7 +456,7 @@ export default function NmeaViewer() {
                         {t.exportToGpx}
                       </button>
                     )}
-                    {(fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz" || fileFormat === "ubx") && (
+                    {points.length > 0 && (fileFormat === "nmea" || fileFormat === "gpx" || fileFormat === "kmz" || fileFormat === "ubx") && (
                       <button
                         onClick={() => exportToKml(points, fileName.replace(/\.[^.]+$/, "") + ".kml")}
                         className="flex-1 text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 font-medium border border-green-300 dark:border-green-700 rounded px-2 py-1"
@@ -494,14 +495,18 @@ export default function NmeaViewer() {
           )}
 
           {/* No points warning */}
-          {!isLoading && fileName && points.length === 0 && errors.length === 0 && (
+          {!isLoading &&
+            fileName &&
+            points.length === 0 &&
+            errors.length === 0 &&
+            !(fileFormat === "ubx" && ubxData && Object.keys(ubxData.messageCounts).length > 0) && (
             <div className="mx-3 my-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded text-xs text-red-700 dark:text-red-300 flex-shrink-0">
               {t.noGpsCoordinates}
             </div>
           )}
 
           {/* Tabs */}
-          {points.length > 0 && (
+          {(points.length > 0 || (fileFormat === "ubx" && ubxData !== null)) && (
             <>
               <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 {(["stats", "chart", "satellite", "raw"] as const).map((tab) => (
