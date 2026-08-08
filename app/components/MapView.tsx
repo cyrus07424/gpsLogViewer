@@ -4,9 +4,12 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
+import "leaflet.vectorgrid";
 import { type GpsPoint } from "../lib/nmeaParser";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+const GSI_BLANK_TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png";
+const GSI_VECTOR_TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf";
 
 // Fix Leaflet default icon path issue in Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -108,6 +111,45 @@ function buildArrowIcon(bearingDeg: number): L.DivIcon {
   });
 }
 
+function createGsiVectorLayer(): L.LayerGroup {
+  const blankLayer = L.tileLayer(GSI_BLANK_TILE_URL, {
+    attribution:
+      '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">地理院タイル</a>',
+    maxNativeZoom: 18,
+    maxZoom: 22,
+  });
+
+  const vectorLayer = L.vectorGrid.protobuf(GSI_VECTOR_TILE_URL, {
+    attribution:
+      '<a href="https://github.com/gsi-cyberjapan/gsimaps-vector-experiment" target="_blank" rel="noreferrer">国土地理院ベクトルタイル提供実験</a>',
+    rendererFactory: L.canvas.tile,
+    vectorTileLayerStyles: {
+      road: { color: "#808080", weight: 1 },
+      railway: { color: "#4b5563", weight: 1.5 },
+      river: { color: "#0ea5e9", weight: 1 },
+      lake: { color: "#0ea5e9", weight: 1, fill: true, fillColor: "#0ea5e9", fillOpacity: 0.25 },
+      waterarea: { color: "#0ea5e9", weight: 1, fill: true, fillColor: "#0ea5e9", fillOpacity: 0.2 },
+      building: { color: "#cbd5e1", weight: 0.5, fill: true, fillColor: "#cbd5e1", fillOpacity: 0.5 },
+      label: [],
+      boundary: [],
+      coastline: [],
+      contour: [],
+      elevation: [],
+      landforma: [],
+      landforml: [],
+      landformp: [],
+      searoute: [],
+      structurea: [],
+      structurel: [],
+      symbol: [],
+      transp: [],
+      wstructurea: [],
+    },
+  });
+
+  return L.layerGroup([blankLayer, vectorLayer]);
+}
+
 /** Resolve the travel bearing (0–360) for a given point in a track. */
 function resolvePointBearing(point: GpsPoint, index: number | undefined, points: GpsPoint[]): number {
   if (point.course !== undefined) return point.course;
@@ -174,6 +216,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
         maxNativeZoom: 17,
         maxZoom: 22,
       }),
+      "GSI Maps Vector": createGsiVectorLayer(),
       "Esri World Imagery Satellite": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         attribution: "Tiles &copy; Esri",
         maxNativeZoom: 19,

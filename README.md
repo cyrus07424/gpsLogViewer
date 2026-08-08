@@ -40,3 +40,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 To enable the Google satellite layer in the map control, set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env.local` for local development.
 
 For GitHub Actions / GitHub Pages builds, add the same value as the repository secret `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` so the production build can include the Google layer.
+
+## GSI Vector map
+
+The map control also includes a **地理院地図Vector** base layer. It uses the GSI blank raster tile plus the experimental GSI vector tile overlay, so no extra API key is required.
