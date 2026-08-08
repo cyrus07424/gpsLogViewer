@@ -174,7 +174,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
         maxNativeZoom: 17,
         maxZoom: 22,
       }),
-      Satellite: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      "Esri World Imagery Satellite": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         attribution: "Tiles &copy; Esri",
         maxNativeZoom: 19,
         maxZoom: 22,
@@ -194,47 +194,79 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     // loaded dynamically to avoid errors when no key is provided.
     if (GOOGLE_MAPS_API_KEY) {
       const loadGoogleLayer = async () => {
-        // Inject Google Maps JS API script if not already present
-        const scriptId = "google-maps-api";
-        if (!document.getElementById(scriptId)) {
-          await new Promise<void>((resolve, reject) => {
-            const script = document.createElement("script");
-            script.id = scriptId;
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
-            script.async = true;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error("Failed to load Google Maps API"));
-            document.head.appendChild(script);
-          });
-        } else {
-          // Wait until the google global is ready (max 10 s)
-          await new Promise<void>((resolve, reject) => {
-            const start = Date.now();
-            const check = () => {
-              if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>).google) {
-                resolve();
-              } else if (Date.now() - start > 10000) {
-                reject(new Error("Timed out waiting for Google Maps API to initialize"));
-              } else {
-                setTimeout(check, 50);
-              }
-            };
-            check();
-          });
-        }
+        const waitFor = async (predicate: () => boolean, timeoutMs: number, message: string) => {
+          const start = Date.now();
+          while (!predicate()) {
+            if (Date.now() - start > timeoutMs) {
+              throw new Error(message);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        };
+
+        const ensureScript = async (scriptId: string, src: string) => {
+          if (!document.getElementById(scriptId)) {
+            await new Promise<void>((resolve, reject) => {
+              const script = document.createElement("script");
+              script.id = scriptId;
+              script.src = src;
+              script.async = true;
+              script.onload = () => resolve();
+              script.onerror = () => reject(new Error(`Failed to load ${scriptId}`));
+              document.head.appendChild(script);
+            });
+          }
+        };
+
+        await ensureScript("google-maps-api", `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`);
+        await waitFor(
+          () => typeof window !== "undefined" && !!(window as unknown as { google?: { maps?: { Map?: unknown } } }).google?.maps?.Map,
+          10000,
+          "Timed out waiting for Google Maps API to initialize"
+        );
 
         // Map may have been destroyed while we awaited
         if (!mapRef.current) return;
 
-        const { default: GoogleMutant } = await import("leaflet.gridlayer.googlemutant") as { default: typeof import("leaflet.gridlayer.googlemutant") };
-        void GoogleMutant; // ensure the plugin registers itself on L
+        const win = window as Window & {
+          L?: typeof L & {
+            gridLayer?: typeof L.gridLayer & {
+              googleMutant?: (opts: Record<string, unknown>) => L.Layer;
+            };
+          };
+        };
+        win.L = L;
 
-        const googleSatellite = (L.gridLayer as unknown as { googleMutant: (opts: Record<string, unknown>) => L.Layer }).googleMutant({
-          type: "satellite",
-          maxZoom: 22,
-        });
+        await ensureScript(
+          "leaflet-google-mutant",
+          "https://unpkg.com/leaflet.gridlayer.googlemutant@0.16.0/dist/Leaflet.GoogleMutant.js"
+        );
+        await waitFor(
+          () => !!win.L?.gridLayer?.googleMutant || !!(win.L?.GridLayer as unknown as { GoogleMutant?: unknown })?.GoogleMutant,
+          10000,
+          "Timed out waiting for Leaflet GoogleMutant to initialize"
+        );
 
-        layersControl.addBaseLayer(googleSatellite, "Google 衛星");
+        const googleMutantFactory = win.L?.gridLayer?.googleMutant;
+        const GoogleMutantCtor = (win.L?.GridLayer as unknown as { GoogleMutant?: new (opts: Record<string, unknown>) => L.Layer })?.GoogleMutant;
+
+        const googleSatellite =
+          googleMutantFactory?.({
+            type: "satellite",
+            maxZoom: 22,
+          }) ??
+          (GoogleMutantCtor
+            ? new GoogleMutantCtor({
+                type: "satellite",
+                maxZoom: 22,
+              })
+            : null);
+
+        if (!googleSatellite) {
+          throw new Error("Google Maps layer factory is unavailable");
+        }
+
+        layersControl.addBaseLayer(googleSatellite, "Google Map Satellite");
       };
 
       loadGoogleLayer().catch((err) => {
