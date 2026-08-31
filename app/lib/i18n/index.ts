@@ -33,6 +33,11 @@ export interface Translations {
   closePanel: string;
   openPanel: string;
 
+  // Map provider toggle
+  mapEngineTitle: string;
+  leafletMode: string;
+  mapLibreMode: string;
+
   // Tabs
   tabStats: string;
   tabChart: string;

@@ -28,6 +28,11 @@ export const en: Translations = {
   closePanel: "Close panel",
   openPanel: "Open panel",
 
+  // Map provider toggle
+  mapEngineTitle: "Map engine",
+  leafletMode: "Leaflet",
+  mapLibreMode: "MapLibre",
+
   // Tabs
   tabStats: "Stats",
   tabChart: "Chart",

@@ -27,6 +27,11 @@ export const ja: Translations = {
   closePanel: "パネルを閉じる",
   openPanel: "パネルを開く",
 
+  // Map provider toggle
+  mapEngineTitle: "地図エンジン",
+  leafletMode: "Leaflet",
+  mapLibreMode: "MapLibre",
+
   // Tabs
   tabStats: "統計",
   tabChart: "グラフ",

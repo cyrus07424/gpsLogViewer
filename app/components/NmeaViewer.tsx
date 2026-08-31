@@ -15,7 +15,10 @@ import { useTranslations, type Translations } from "../lib/i18n";
 type FileFormat = "nmea" | "gpx" | "kml" | "kmz" | "ubx" | "unknown";
 
 // Dynamically import the map to avoid SSR issues
-const MapView = dynamic(() => import("./MapView"), { ssr: false });
+const LeafletMapView = dynamic(() => import("./MapView"), { ssr: false });
+const MapLibreView = dynamic(() => import("./MapLibreView"), { ssr: false });
+
+type MapProvider = "leaflet" | "maplibre";
 
 function formatDuration(seconds: number): string {
   if (seconds <= 0) return "—";
@@ -87,6 +90,7 @@ export default function NmeaViewer() {
   const [playSpeed, setPlaySpeed] = useState(10);
   const [centerOnMarker, setCenterOnMarker] = useState(false);
   const [headingUp, setHeadingUp] = useState(false);
+  const [mapProvider, setMapProvider] = useState<MapProvider>("leaflet");
   const playTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playIndexRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -352,25 +356,73 @@ export default function NmeaViewer() {
   return (
     <div className={`relative w-full h-screen overflow-hidden${points.length > 0 ? " seekbar-visible" : ""}`}>
       {/* Full-screen map */}
-      <MapView
-        points={points}
-        colorBySpeed={colorBySpeed}
-        seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
-        seekIndex={seekIndex}
-        markerType={markerType}
-        centerOnMarker={centerOnMarker}
-        headingUp={headingUp}
-        mapLabels={{
-          speed: t.mapSpeed,
-          altitude: t.mapAltitude,
-          satellites: t.mapSatellites,
-          startMarker: t.mapStartMarker,
-          endMarker: t.mapEndMarker,
-        }}
-      />
+      {mapProvider === "leaflet" ? (
+        <LeafletMapView
+          key={mapProvider}
+          points={points}
+          colorBySpeed={colorBySpeed}
+          seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
+          seekIndex={seekIndex}
+          markerType={markerType}
+          centerOnMarker={centerOnMarker}
+          headingUp={headingUp}
+          mapLabels={{
+            speed: t.mapSpeed,
+            altitude: t.mapAltitude,
+            satellites: t.mapSatellites,
+            startMarker: t.mapStartMarker,
+            endMarker: t.mapEndMarker,
+          }}
+        />
+      ) : (
+        <MapLibreView
+          key={mapProvider}
+          points={points}
+          colorBySpeed={colorBySpeed}
+          seekPoint={points.length > 0 ? (points[seekIndex] ?? null) : null}
+          seekIndex={seekIndex}
+          markerType={markerType}
+          centerOnMarker={centerOnMarker}
+          headingUp={headingUp}
+          mapLabels={{
+            speed: t.mapSpeed,
+            altitude: t.mapAltitude,
+            satellites: t.mapSatellites,
+            startMarker: t.mapStartMarker,
+            endMarker: t.mapEndMarker,
+          }}
+        />
+      )}
 
       {/* Top-right controls */}
       <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
+        <div className="rounded-full bg-white/95 dark:bg-gray-800/95 shadow-md border border-gray-200 dark:border-gray-700 px-1 py-1 flex items-center gap-1 backdrop-blur-sm">
+          <span className="sr-only">{t.mapEngineTitle}</span>
+          <button
+            onClick={() => setMapProvider("leaflet")}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              mapProvider === "leaflet"
+                ? "bg-blue-600 text-white"
+                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            }`}
+            aria-pressed={mapProvider === "leaflet"}
+            title={t.leafletMode}
+          >
+            {t.leafletMode}
+          </button>
+          <button
+            onClick={() => setMapProvider("maplibre")}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              mapProvider === "maplibre"
+                ? "bg-blue-600 text-white"
+                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            }`}
+            aria-pressed={mapProvider === "maplibre"}
+            title={t.mapLibreMode}
+          >
+            {t.mapLibreMode}
+          </button>
+        </div>
         <button
           onClick={() => setIsPanelOpen((v) => !v)}
           className="bg-white dark:bg-gray-800 shadow-md rounded-full w-10 h-10 flex items-center justify-center text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
