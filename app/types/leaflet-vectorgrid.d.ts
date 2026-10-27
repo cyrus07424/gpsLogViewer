@@ -10,7 +10,7 @@ declare module "leaflet" {
     fill?: boolean;
   }
 
-  interface VectorGridOptions {
+  interface VectorGridOptions extends GridLayerOptions {
     attribution?: string;
     rendererFactory?: typeof L.canvas.tile;
     vectorTileLayerStyles?: Record<string, VectorGridStyle | VectorGridStyle[]>;

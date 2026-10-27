@@ -28,6 +28,15 @@ export const en: Translations = {
   closePanel: "Close panel",
   openPanel: "Open panel",
 
+  mapEngineTitle: "Map engine",
+  basemapTitle: "Basemap",
+  gsiStd: "GSI Standard",
+  gsiPale: "GSI Pale",
+  gsiPhoto: "Aerial imagery",
+  gsiBlank: "GSI Blank",
+  gsiVector: "GSI Vector",
+  mapLoadError: "The map could not be loaded. Check your connection and WebGL support, or switch to Leaflet.",
+
   // Tabs
   tabStats: "Stats",
   tabChart: "Chart",

@@ -6,10 +6,14 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-rotate";
 import "leaflet.vectorgrid";
 import { type GpsPoint } from "../lib/nmeaParser";
+import { GsiLabelLayer } from "./GsiLabelLayer";
+import { GSI_VECTOR_TILE_URL, GSI_VECTOR_ATTRIBUTION } from "../lib/gsiVector";
+import {
+  buildTooltipContent, DEFAULT_MAP_LABELS, resolvePointBearing, speedColor,
+  type MapViewProps, type MarkerType,
+} from "../lib/mapUtils";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-const GSI_BLANK_TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png";
-const GSI_VECTOR_TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf";
 
 // Fix Leaflet default icon path issue in Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -18,69 +22,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
-
-export interface MapLabels {
-  speed: string;
-  altitude: string;
-  satellites: string;
-  startMarker: string;
-  endMarker: string;
-}
-
-const DEFAULT_MAP_LABELS: MapLabels = {
-  speed: "速度",
-  altitude: "高度",
-  satellites: "衛星数",
-  startMarker: "スタート",
-  endMarker: "ゴール",
-};
-
-function buildTooltipContent(p: GpsPoint, labels: MapLabels, label?: string): string {
-  return [
-    label ? `<b>${label}</b>` : "",
-    p.timestamp ? `<b>${p.timestamp.toLocaleString()}</b>` : "",
-    `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
-    p.speed !== undefined ? `${labels.speed}: ${p.speed.toFixed(1)} km/h` : "",
-    p.altitude !== undefined ? `${labels.altitude}: ${p.altitude.toFixed(1)} m` : "",
-    p.satellites !== undefined ? `${labels.satellites}: ${p.satellites}` : "",
-    p.hdop !== undefined ? `HDOP: ${p.hdop.toFixed(1)}` : "",
-  ]
-    .filter(Boolean)
-    .join("<br>");
-}
-
-export type MarkerType = "circle" | "arrow";
-
-interface MapViewProps {
-  points: GpsPoint[];
-  colorBySpeed: boolean;
-  seekPoint?: GpsPoint | null;
-  seekIndex?: number;
-  markerType?: MarkerType;
-  centerOnMarker?: boolean;
-  headingUp?: boolean;
-  mapLabels?: MapLabels;
-}
-
-function speedColor(speed?: number, maxSpeed?: number): string {
-  if (speed === undefined || maxSpeed === undefined || maxSpeed === 0) return "#3b82f6";
-  const ratio = Math.min(speed / maxSpeed, 1);
-  // green → yellow → red
-  const r = Math.round(ratio < 0.5 ? ratio * 2 * 255 : 255);
-  const g = Math.round(ratio < 0.5 ? 255 : (1 - ratio) * 2 * 255);
-  return `rgb(${r},${g},0)`;
-}
-
-/** Calculate bearing in degrees (0–360) from point a to point b. */
-function calcBearing(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
 
 /** Build a Leaflet divIcon with a CSS circle for the seek position marker.
  * Uses a divIcon instead of L.circleMarker so that the marker is placed as a
@@ -112,16 +53,11 @@ function buildArrowIcon(bearingDeg: number): L.DivIcon {
 }
 
 function createGsiVectorLayer(): L.LayerGroup {
-  const blankLayer = L.tileLayer(GSI_BLANK_TILE_URL, {
-    attribution:
-      '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noreferrer">地理院タイル</a>',
-    maxNativeZoom: 18,
-    maxZoom: 22,
-  });
-
   const vectorLayer = L.vectorGrid.protobuf(GSI_VECTOR_TILE_URL, {
-    attribution:
-      '<a href="https://github.com/gsi-cyberjapan/gsimaps-vector-experiment" target="_blank" rel="noreferrer">国土地理院ベクトルタイル提供実験</a>',
+    attribution: GSI_VECTOR_ATTRIBUTION,
+    minZoom: 4,
+    maxNativeZoom: 16,
+    maxZoom: 22,
     rendererFactory: L.canvas.tile,
     vectorTileLayerStyles: {
       road: { color: "#808080", weight: 1 },
@@ -147,20 +83,7 @@ function createGsiVectorLayer(): L.LayerGroup {
     },
   });
 
-  return L.layerGroup([blankLayer, vectorLayer]);
-}
-
-/** Resolve the travel bearing (0–360) for a given point in a track. */
-function resolvePointBearing(point: GpsPoint, index: number | undefined, points: GpsPoint[]): number {
-  if (point.course !== undefined) return point.course;
-  if (index !== undefined && index > 0) {
-    const prev = points[index - 1];
-    if (prev) return calcBearing(prev.lat, prev.lng, point.lat, point.lng);
-  }
-  if ((index === undefined || index === 0) && points.length > 1) {
-    return calcBearing(point.lat, point.lng, points[1].lat, points[1].lng);
-  }
-  return 0;
+  return L.layerGroup([vectorLayer, new GsiLabelLayer()]);
 }
 
 export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, markerType = "circle", centerOnMarker = false, headingUp = false, mapLabels }: MapViewProps) {
@@ -229,7 +152,7 @@ export default function MapView({ points, colorBySpeed, seekPoint, seekIndex, ma
     const layersControl = L.control.layers(baseLayers, {}, { position: "topright", collapsed: true }).addTo(map);
     const layersControlEl = layersControl.getContainer();
     if (layersControlEl) {
-      layersControlEl.style.marginTop = "72px";
+      layersControlEl.style.marginTop = "112px";
     }
 
     // Load Google Maps Satellite layer when an API key is configured.

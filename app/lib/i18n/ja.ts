@@ -27,6 +27,15 @@ export const ja: Translations = {
   closePanel: "パネルを閉じる",
   openPanel: "パネルを開く",
 
+  mapEngineTitle: "地図エンジン",
+  basemapTitle: "ベースマップ",
+  gsiStd: "地理院標準",
+  gsiPale: "地理院淡色",
+  gsiPhoto: "空中写真",
+  gsiBlank: "地理院白地図",
+  gsiVector: "地理院ベクター",
+  mapLoadError: "地図を読み込めませんでした。通信環境とWebGLの対応状況を確認するか、Leafletに切り替えてください。",
+
   // Tabs
   tabStats: "統計",
   tabChart: "グラフ",

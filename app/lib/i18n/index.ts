@@ -33,6 +33,15 @@ export interface Translations {
   closePanel: string;
   openPanel: string;
 
+  mapEngineTitle: string;
+  basemapTitle: string;
+  gsiStd: string;
+  gsiPale: string;
+  gsiPhoto: string;
+  gsiBlank: string;
+  gsiVector: string;
+  mapLoadError: string;
+
   // Tabs
   tabStats: string;
   tabChart: string;

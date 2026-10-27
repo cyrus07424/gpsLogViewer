@@ -43,4 +43,19 @@ For GitHub Actions / GitHub Pages builds, add the same value as the repository s
 
 ## GSI Vector map
 
-The map control also includes a **地理院地図Vector** base layer. It uses the GSI blank raster tile plus the experimental GSI vector tile overlay, so no extra API key is required.
+The map control also includes a **地理院地図Vector** base layer. It draws the experimental
+GSI vector tiles without a raster underlay, so no extra API key is required. Labels are
+rendered separately and remain horizontal when the map rotates: screen-aligned DOM
+markers in Leaflet, and viewport-aligned text symbols in MapLibre. Standard/Pale raster
+basemaps still rotate their embedded labels with the map.
+
+## Map engines
+
+Use the **Leaflet / MapLibre** buttons at the top right to switch rendering engines.
+Leaflet remains the default. Switching preserves the loaded GPS log, playback position,
+speed coloring, marker type, follow mode, and heading-up setting; the new map fits the
+loaded track. MapLibre requires WebGL and provides GSI Standard, Pale, aerial imagery,
+Blank, Vector, and OpenStreetMap basemaps without an API key. Google satellite remains
+available only in Leaflet. MapLibre support is based on the `feature/maplibre` implementation.
+
+Run `npm test` (Node.js 22.6 or later) for shared map-data and bearing regression tests.
